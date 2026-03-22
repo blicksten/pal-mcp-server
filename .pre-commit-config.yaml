@@ -1,28 +1,5 @@
 ---
-default_stages: [pre-commit, pre-push]
-repos:
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-      - id: black
-
-  - repo: https://github.com/pycqa/isort
-    rev: 6.0.1
-    hooks:
-      - id: isort
-        args: ["--profile", "black"]
-
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.12.8
-    hooks:
-      - id: ruff
-        args: [--fix]
-
-# Configuration for specific tools
-default_language_version:
-  python: python3
-
-# Exclude patterns
+# Exclude patterns (kept from original)
 exclude: |
   (?x)^(
     \.git/|
@@ -36,3 +13,37 @@ exclude: |
     build/|
     test_simulation_files/
   )
+
+repos:
+  # --- Generic file hygiene ---
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+
+  # --- Python: Ruff lint + format (replaces Black + isort) ---
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  # --- Shell: ShellCheck (shellcheck-py: bundled binary, no Docker needed on Windows) ---
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning]
+
+  # --- Secrets detection ---
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.22.1
+    hooks:
+      - id: gitleaks
