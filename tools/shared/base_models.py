@@ -30,6 +30,11 @@ COMMON_FIELD_DESCRIPTIONS = {
     ),
     "images": "Optional absolute image paths or base64 blobs for visual context.",
     "absolute_file_paths": "Full paths to relevant code",
+    "gate_mode": (
+        "When True, tool response includes structured gate verdict metadata: "
+        "gate_verdict (PASS/HALT/DISPUTE), gate_findings (list of {description, severity}), "
+        "gate_summary (one-line summary). Used by orchestrator CV gates."
+    ),
 }
 
 # Workflow-specific field descriptions
@@ -76,6 +81,9 @@ class ToolRequest(BaseModel):
 
     # Visual context
     images: Optional[list[str]] = Field(None, description=COMMON_FIELD_DESCRIPTIONS["images"])
+
+    # Gate mode — when True, response includes structured verdict metadata
+    gate_mode: bool = Field(False, description=COMMON_FIELD_DESCRIPTIONS["gate_mode"])
 
 
 class BaseWorkflowRequest(ToolRequest):

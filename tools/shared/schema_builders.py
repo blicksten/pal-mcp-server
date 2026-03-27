@@ -41,6 +41,11 @@ class SchemaBuilder:
             "items": {"type": "string"},
             "description": COMMON_FIELD_DESCRIPTIONS["images"],
         },
+        "gate_mode": {
+            "type": "boolean",
+            "default": False,
+            "description": COMMON_FIELD_DESCRIPTIONS["gate_mode"],
+        },
     }
 
     # Simple tool-specific field schemas (workflow tools use relevant_files instead)

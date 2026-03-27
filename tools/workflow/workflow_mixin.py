@@ -726,6 +726,11 @@ class BaseWorkflowMixin(ABC):
             # Allow tools to customize the final response
             response_data = self.customize_workflow_response(response_data, request)
 
+            # Extract gate verdict when gate_mode is enabled and workflow is complete
+            if getattr(request, "gate_mode", False) and not request.next_step_required:
+                gate_data = self._extract_gate_verdict()
+                response_data.update(gate_data)
+
             # Add metadata (provider_used and model_used) to workflow response
             self._add_workflow_metadata(response_data, arguments)
 
@@ -1131,6 +1136,55 @@ class BaseWorkflowMixin(ABC):
             images=self.get_request_images(request),
             model_metadata=workflow_state,  # Persist the state
         )
+
+    def _extract_gate_verdict(self) -> dict:
+        """
+        Extract structured gate verdict from consolidated findings.
+
+        Returns a dict with gate_verdict, gate_findings, and gate_summary
+        for use by orchestrator CV gates. Called when gate_mode=True and
+        workflow is complete.
+
+        Verdict logic:
+        - HALT: any CRITICAL, HIGH, or MEDIUM severity finding
+        - PASS: only LOW or no findings
+        """
+        issues = self.consolidated_findings.issues_found
+
+        # Count by severity
+        severity_counts: dict[str, int] = {}
+        gate_findings = []
+        for issue in issues:
+            sev = issue.get("severity", "unknown").lower()
+            severity_counts[sev] = severity_counts.get(sev, 0) + 1
+            gate_findings.append(
+                {
+                    "description": issue.get("description", str(issue)),
+                    "severity": issue.get("severity", "unknown"),
+                }
+            )
+
+        # Also extract from expert_analysis if available
+        # (expert analysis may find issues not in consolidated_findings)
+        # This is handled by the caller inspecting expert_analysis separately
+
+        blocking_severities = {"critical", "high", "medium"}
+        has_blocking = any(severity_counts.get(sev, 0) > 0 for sev in blocking_severities)
+
+        verdict = "HALT" if has_blocking else "PASS"
+
+        if verdict == "HALT":
+            blockers = sum(severity_counts.get(s, 0) for s in blocking_severities)
+            summary = f"HALT: {blockers} blocking finding(s) — {dict(severity_counts)}"
+        else:
+            total = len(issues)
+            summary = f"PASS: {total} finding(s), none blocking"
+
+        return {
+            "gate_verdict": verdict,
+            "gate_findings": gate_findings,
+            "gate_summary": summary,
+        }
 
     def _add_workflow_metadata(self, response_data: dict, arguments: dict[str, Any]) -> None:
         """
