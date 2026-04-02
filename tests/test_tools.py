@@ -3,6 +3,7 @@ Tests for individual tool implementations
 """
 
 import json
+import os
 import shutil
 import tempfile
 
@@ -10,6 +11,10 @@ import pytest
 
 from tools import AnalyzeTool, ChatTool, CodeReviewTool, ThinkDeepTool
 from tools.shared.exceptions import ToolExecutionError
+
+# Platform-aware absolute path for use in tool arguments.
+# On Windows, /absolute/path/file.py has no drive letter and is not absolute.
+_ABS_FILE_PY = os.path.join(tempfile.gettempdir(), "test_tools", "file.py")
 
 
 class TestThinkDeepTool:
@@ -404,7 +409,7 @@ class TestAbsolutePathValidation:
                         "total_steps": 1,
                         "next_step_required": False,
                         "findings": "Initial code analysis",
-                        "relevant_files": ["/absolute/path/file.py"],
+                        "relevant_files": [_ABS_FILE_PY],
                         "model": "o3-mini",
                     }
                 )

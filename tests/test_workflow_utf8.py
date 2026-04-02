@@ -5,12 +5,21 @@ and the generation of properly encoded JSON responses.
 
 import json
 import os
+import tempfile
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from tools.analyze import AnalyzeTool
 from tools.codereview import CodeReviewTool
 from tools.debug import DebugIssueTool
+
+# Platform-aware absolute paths for use in tool arguments.
+# On Windows, paths like /test/main.py have no drive letter and fail
+# is_absolute() checks in the workflow tools' path validation.
+_TMP = tempfile.gettempdir()
+_ABS_MAIN_PY = os.path.join(_TMP, "test_workflow", "main.py")
+_ABS_EXAMPLE_PY = os.path.join(_TMP, "test_workflow", "example.py")
+_ABS_DATA_PROCESSOR_PY = os.path.join(_TMP, "test_workflow", "src", "data_processor.py")
 
 
 class TestWorkflowToolsUTF8(unittest.IsolatedAsyncioTestCase):
@@ -105,7 +114,7 @@ class TestWorkflowToolsUTF8(unittest.IsolatedAsyncioTestCase):
                 "total_steps": 1,
                 "next_step_required": False,
                 "findings": "Starting architectural analysis of Python code",
-                "relevant_files": ["/test/main.py"],
+                "relevant_files": [_ABS_MAIN_PY],
                 "model": "flash",
             }
         )
@@ -173,7 +182,7 @@ class TestWorkflowToolsUTF8(unittest.IsolatedAsyncioTestCase):
                 "total_steps": 1,
                 "next_step_required": False,
                 "findings": "Code review complete",
-                "relevant_files": ["/test/example.py"],
+                "relevant_files": [_ABS_EXAMPLE_PY],
                 "model": "test-model",
             }
         )
@@ -215,14 +224,14 @@ class TestWorkflowToolsUTF8(unittest.IsolatedAsyncioTestCase):
                         "total_steps": 2,
                         "next_step_required": True,
                         "findings": (
-                            "Erreur analysée: variable 'données' non définie. " "Cause probable: import manquant."
+                            "Erreur analysée: variable 'données' non définie. Cause probable: import manquant."
                         ),
                         "files_checked": ["/src/data_processor.py"],
                         "relevant_files": ["/src/data_processor.py"],
                         "hypothesis": ("Variable 'données' not defined - missing import"),
                         "confidence": "medium",
                         "investigation_status": "in_progress",
-                        "error_analysis": ("L'erreur concerne la variable 'données' qui " "n'est pas définie."),
+                        "error_analysis": ("L'erreur concerne la variable 'données' qui n'est pas définie."),
                     },
                     ensure_ascii=False,
                 ),
@@ -242,8 +251,8 @@ class TestWorkflowToolsUTF8(unittest.IsolatedAsyncioTestCase):
                 "total_steps": 1,
                 "next_step_required": False,
                 "findings": "Error detected during script execution",
-                "files_checked": ["/src/data_processor.py"],
-                "relevant_files": ["/src/data_processor.py"],
+                "files_checked": [_ABS_DATA_PROCESSOR_PY],
+                "relevant_files": [_ABS_DATA_PROCESSOR_PY],
                 "hypothesis": ("Variable 'données' not defined - missing import"),
                 "confidence": "medium",
                 "model": "test-model",

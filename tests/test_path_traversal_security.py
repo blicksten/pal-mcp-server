@@ -14,11 +14,15 @@ Additionally, this fix properly handles home directory containers:
   and handled by is_home_directory_root() in resolve_and_validate_path()
 """
 
+import sys
 from pathlib import Path
+
+import pytest
 
 from utils.security_config import is_dangerous_path
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix paths not applicable on Windows")
 class TestPathTraversalFix:
     """Test that subdirectories of dangerous system paths are blocked."""
 
@@ -58,6 +62,7 @@ class TestPathTraversalFix:
         assert is_dangerous_path(Path("/tmp/my_etc_files")) is False
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix paths not applicable on Windows")
 class TestHomeDirectoryHandling:
     """Test that home directory containers are handled correctly.
 
@@ -88,6 +93,7 @@ class TestHomeDirectoryHandling:
         assert is_dangerous_path(Path("/home/user/documents/work/project/src")) is False
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Unix paths not applicable on Windows")
 class TestRegressionPrevention:
     """Regression tests for the specific vulnerability."""
 

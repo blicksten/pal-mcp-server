@@ -12,6 +12,7 @@ and inherit all the conversation, file processing, and model handling
 capabilities from BaseTool.
 """
 
+import asyncio
 from abc import abstractmethod
 from typing import Any, Optional
 
@@ -416,6 +417,7 @@ class SimpleTool(BaseTool):
             # Get the provider from model context (clean OOP - no re-fetching)
             provider = self._model_context.provider
             capabilities = self._model_context.capabilities
+            model_response = None  # Will be set after generate_content()
 
             # Get system prompt for this tool
             base_system_prompt = self.get_system_prompt()
@@ -441,7 +443,9 @@ class SimpleTool(BaseTool):
             supports_thinking = capabilities.supports_extended_thinking
 
             # Generate content with provider abstraction
-            model_response = provider.generate_content(
+            # Run synchronous provider call in a thread to avoid blocking the asyncio event loop
+            model_response = await asyncio.to_thread(
+                provider.generate_content,
                 prompt=prompt,
                 model_name=self._current_model_name,
                 system_prompt=system_prompt,
@@ -498,7 +502,8 @@ class SimpleTool(BaseTool):
                         retry_prompt = f"{original_prompt}\n\nIMPORTANT: Please provide a substantive response. If you cannot respond to the above request, please explain why and suggest alternatives."
 
                         try:
-                            retry_response = provider.generate_content(
+                            retry_response = await asyncio.to_thread(
+                                provider.generate_content,
                                 prompt=retry_prompt,
                                 model_name=self._current_model_name,
                                 system_prompt=system_prompt,
@@ -562,6 +567,26 @@ class SimpleTool(BaseTool):
                             content=f"Response blocked or incomplete. Finish reason: {finish_reason}",
                             content_type="text",
                         )
+
+            # Log cost event to shared JSONL (fire-and-forget)
+            if model_response is not None and model_response.usage:
+                try:
+                    from tools.shared.cost_writer import log_pal_cost
+
+                    usage = model_response.usage
+                    log_pal_cost(
+                        model=model_response.model_name or self._current_model_name or "",
+                        input_tokens=usage.get("input_tokens", 0),
+                        output_tokens=usage.get("output_tokens", 0),
+                        total_tokens=usage.get("total_tokens", 0),
+                        tool_name=self.get_name(),
+                    )
+                except Exception:
+                    pass  # Never break tool execution for cost logging
+
+            # Add usage metadata to ToolOutput for transparency
+            if model_response is not None and model_response.usage and tool_output.metadata is not None:
+                tool_output.metadata["usage"] = model_response.usage
 
             # Return the tool output as TextContent, marking protocol errors appropriately
             payload = tool_output.model_dump_json()

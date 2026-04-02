@@ -19,6 +19,12 @@ from tools.chat import ChatTool
 from tools.codereview import CodeReviewTool
 from tools.shared.exceptions import ToolExecutionError
 
+# Platform-aware absolute paths for use in tool arguments.
+# On Windows, /some/file.py has no drive letter and fails is_absolute().
+_TMP = tempfile.gettempdir()
+_ABS_SOME_FILE_PY = os.path.join(_TMP, "test_large_prompt", "file.py")
+_ABS_SOME_OTHER_FILE_PY = os.path.join(_TMP, "test_large_prompt", "other", "file.py")
+
 # from tools.debug import DebugIssueTool  # Commented out - debug tool refactored
 
 
@@ -171,8 +177,8 @@ class TestLargePromptHandling:
                     "total_steps": 1,
                     "next_step_required": False,
                     "findings": "Initial testing",
-                    "relevant_files": ["/some/file.py"],
-                    "files_checked": ["/some/file.py"],
+                    "relevant_files": [_ABS_SOME_FILE_PY],
+                    "files_checked": [_ABS_SOME_FILE_PY],
                     "focus_on": large_prompt,
                     "prompt": "Test code review for validation purposes",
                     "model": "o3-mini",
@@ -256,7 +262,7 @@ class TestLargePromptHandling:
     async def test_multiple_files_with_prompt_txt(self, temp_prompt_file):
         """Test handling of prompt.txt alongside other files."""
         tool = ChatTool()
-        other_file = "/some/other/file.py"
+        other_file = _ABS_SOME_OTHER_FILE_PY
 
         with (
             patch("utils.model_context.ModelContext") as mock_model_context_cls,
@@ -405,7 +411,6 @@ class TestLargePromptHandling:
             patch.object(tool, "get_model_provider") as mock_get_provider,
             patch("utils.model_context.ModelContext") as mock_model_context_class,
         ):
-
             mock_provider = create_mock_provider(model_name="gemini-2.5-flash", context_window=1_048_576)
             mock_provider.generate_content.return_value.content = "Success"
             mock_get_provider.return_value = mock_provider

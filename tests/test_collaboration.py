@@ -4,6 +4,7 @@ Tests for dynamic context request and collaboration features
 
 import json
 import os
+import tempfile
 from unittest.mock import Mock, patch
 
 import pytest
@@ -12,6 +13,17 @@ from tests.mock_helpers import create_mock_provider
 from tools.analyze import AnalyzeTool
 from tools.debug import DebugIssueTool
 from tools.models import FilesNeededRequest, ToolOutput
+
+# Platform-aware absolute paths used as file references in tool arguments.
+# The workflow tools validate that relevant_files entries are absolute paths;
+# on Windows Path("/absolute/path") resolves without a drive letter and fails
+# the is_absolute() check.  We use tempfile.gettempdir() as the root instead.
+_TMP = tempfile.gettempdir()
+_ABS_SRC_INDEX = os.path.join(_TMP, "test_src", "index.js")
+_ABS_TEST_PY = os.path.join(_TMP, "test_src", "test.py")
+_ABS_LOGS_ERROR = os.path.join(_TMP, "test_logs", "error.log")
+_ABS_CONFIG_PY = os.path.join(_TMP, "test_src", "config.py")
+_ABS_MAIN_PY = os.path.join(_TMP, "test_code", "main.py")
 
 
 class TestDynamicContextRequests:
@@ -53,7 +65,7 @@ class TestDynamicContextRequests:
                 "total_steps": 1,
                 "next_step_required": False,
                 "findings": "Initial dependency analysis",
-                "relevant_files": ["/absolute/path/src/index.js"],
+                "relevant_files": [_ABS_SRC_INDEX],
             }
         )
 
@@ -95,8 +107,8 @@ class TestDynamicContextRequests:
                 "total_steps": 3,
                 "next_step_required": True,
                 "findings": "The error indicates 'utils' module is not imported or defined",
-                "files_checked": ["/code/main.py"],
-                "relevant_files": ["/code/main.py"],
+                "files_checked": [_ABS_MAIN_PY],
+                "relevant_files": [_ABS_MAIN_PY],
                 "hypothesis": "Missing import statement for utils module",
                 "confidence": "high",
             }
@@ -134,7 +146,7 @@ class TestDynamicContextRequests:
                 "total_steps": 1,
                 "next_step_required": False,
                 "findings": "Initial code analysis",
-                "relevant_files": ["/absolute/path/test.py"],
+                "relevant_files": [_ABS_TEST_PY],
             }
         )
 
@@ -207,7 +219,7 @@ class TestDynamicContextRequests:
                     "total_steps": 1,
                     "next_step_required": False,
                     "findings": "Initial database timeout analysis",
-                    "relevant_files": ["/absolute/logs/error.log"],
+                    "relevant_files": [_ABS_LOGS_ERROR],
                 }
             )
 
@@ -315,7 +327,7 @@ class TestDynamicContextRequests:
                 "total_steps": 1,
                 "next_step_required": False,
                 "findings": "Initial analysis",
-                "relevant_files": ["/absolute/path/test.py"],
+                "relevant_files": [_ABS_TEST_PY],
             }
         )
 
@@ -389,7 +401,7 @@ class TestCollaborationWorkflow:
                 "total_steps": 1,
                 "next_step_required": False,
                 "findings": "Initial dependency analysis",
-                "relevant_files": ["/absolute/path/src/index.js"],
+                "relevant_files": [_ABS_SRC_INDEX],
             }
         )
 
@@ -454,7 +466,7 @@ class TestCollaborationWorkflow:
                 "total_steps": 1,
                 "next_step_required": False,
                 "findings": "Initial database timeout analysis",
-                "relevant_files": ["/logs/error.log"],
+                "relevant_files": [_ABS_LOGS_ERROR],
             }
         )
 
@@ -508,7 +520,7 @@ class TestCollaborationWorkflow:
                 "total_steps": 1,
                 "next_step_required": False,
                 "findings": "Analysis with configuration context",
-                "relevant_files": ["/absolute/path/config.py", "/logs/error.log"],  # Additional context provided
+                "relevant_files": [_ABS_CONFIG_PY, _ABS_LOGS_ERROR],  # Additional context provided
             }
         )
 
