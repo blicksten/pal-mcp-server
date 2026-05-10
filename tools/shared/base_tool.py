@@ -498,12 +498,32 @@ class BaseTool(ABC):
     def _build_model_unavailable_message(self, model_name: str) -> str:
         """Compose a consistent error message for unavailable model scenarios."""
 
+        import difflib
+
         tool_category = self.get_model_category()
         suggested_model = ModelProviderRegistry.get_preferred_fallback_model(tool_category)
         available_models_text = self._format_available_models_list()
 
+        # "Did you mean" hint — cuts diagnosis time for typos like
+        # 'claude-3-5-flash-20241022' (synthetic), 'gpt5pro' vs 'gpt5-pro',
+        # 'gemini-2-5-flash' (dash style). cutoff=0.6 keeps suggestions
+        # conservative so we don't propose nonsense for genuinely unknown
+        # models. Searching against the case-insensitive lower form so the
+        # matcher does not penalize alias casing differences.
+        try:
+            candidates = self._get_available_models()
+        except Exception:
+            candidates = []
+        suggestion_hint = ""
+        if candidates:
+            lookup = {name.lower(): name for name in candidates}
+            matches = difflib.get_close_matches(model_name.lower(), list(lookup.keys()), n=3, cutoff=0.6)
+            preserved = [lookup[m] for m in matches if m in lookup]
+            if preserved:
+                suggestion_hint = " Did you mean: " + ", ".join(f"'{m}'" for m in preserved) + "?"
+
         return (
-            f"Model '{model_name}' is not available with current API keys. "
+            f"Model '{model_name}' is not available with current API keys.{suggestion_hint} "
             f"Available models: {available_models_text}. "
             f"Suggested model for {self.get_name()}: '{suggested_model}' "
             f"(category: {tool_category.value}). If the user explicitly requested a model, you MUST use that exact name or report this error back—do not substitute another model."
@@ -907,7 +927,6 @@ class BaseTool(ABC):
         updated_files = []
 
         for file_path in files:
-
             # Check if the filename is exactly "prompt.txt"
             # This ensures we don't match files like "myprompt.txt" or "prompt.txt.bak"
             if os.path.basename(file_path) == "prompt.txt":

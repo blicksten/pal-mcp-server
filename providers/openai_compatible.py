@@ -448,9 +448,11 @@ class OpenAICompatibleProvider(ModelProvider):
         # For responses endpoint, we only add parameters that are explicitly supported
         # Remove unsupported chat completion parameters that may cause API errors
 
-        # Retry logic with progressive delays
-        max_retries = 4
-        retry_delays = [1, 3, 5, 8]
+        # Retry logic for /v1/responses path. Matches chat.completions: 2 attempts
+        # max so a hung Responses-API call cannot pile up a 4-attempt leaked-thread
+        # tail behind asyncio.wait_for at the workflow layer.
+        max_retries = 2
+        retry_delays = [3]
         attempt_counter = {"value": 0}
 
         def _attempt() -> ModelResponse:
@@ -640,9 +642,12 @@ class OpenAICompatibleProvider(ModelProvider):
                 **kwargs,
             )
 
-        # Retry logic with progressive delays
-        max_retries = 4  # Total of 4 attempts
-        retry_delays = [1, 3, 5, 8]  # Progressive delays: 1s, 3s, 5s, 8s
+        # Retry logic. Total attempts dropped from 4→2 (one retry) so a hung
+        # provider that survives read_timeout=180s cannot pile up a 4-attempt
+        # leaked-thread tail behind an asyncio.wait_for at the workflow layer.
+        # 4xx/5xx classification still happens; only retry budget shrank.
+        max_retries = 2  # 1 retry after first failure
+        retry_delays = [3]  # Single retry delay
         attempt_counter = {"value": 0}
 
         def _attempt() -> ModelResponse:

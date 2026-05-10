@@ -14,9 +14,11 @@ from utils.env import get_env
 # These values are used in server responses and for tracking releases
 # IMPORTANT: This is the single source of truth for version and author info
 # Semantic versioning: MAJOR.MINOR.PATCH
-__version__ = "9.8.2"
+# Local fork — bumped past upstream 9.8.2 (2025-12-15, stale) with
+# infrastructure fixes that unblock workflow tools end-to-end.
+__version__ = "9.9.0-fork"
 # Last update date in ISO format
-__updated__ = "2025-12-15"
+__updated__ = "2026-05-10"
 # Primary maintainer
 __author__ = "Fahad Gilani"
 

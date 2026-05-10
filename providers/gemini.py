@@ -201,9 +201,11 @@ class GeminiModelProvider(RegistryBackedProviderMixin, ModelProvider):
                 actual_thinking_budget = int(max_thinking_tokens * self.THINKING_BUDGETS[effective_thinking_mode])
                 generation_config.thinking_config = types.ThinkingConfig(thinking_budget=actual_thinking_budget)
 
-        # Retry logic with progressive delays
-        max_retries = 4  # Total of 4 attempts
-        retry_delays = [1, 3, 5, 8]  # Progressive delays: 1s, 3s, 5s, 8s
+        # Retry logic. Total attempts dropped from 4→2 (one retry) so a hung
+        # provider cannot pile up a 4-attempt leaked-thread tail behind
+        # asyncio.wait_for at the workflow layer.
+        max_retries = 2  # 1 retry after first failure
+        retry_delays = [3]  # Single retry delay
         attempt_counter = {"value": 0}
 
         def _attempt() -> ModelResponse:
