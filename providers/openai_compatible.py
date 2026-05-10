@@ -144,11 +144,20 @@ class OpenAICompatibleProvider(ModelProvider):
         """
         import httpx
 
-        # Default timeouts - more generous for custom/local endpoints
+        # Default timeouts - more generous for custom/local endpoints.
+        # NOTE: read_timeout is intentionally well below the historical 600s
+        # OpenAI default. With the previous value, a single hung socket could
+        # block an `asyncio.to_thread` worker for up to read_timeout × max_retries
+        # + retry delays (~2417s for max_retries=4) — which exceeds MCP's ~300s
+        # client deadline, leaks ThreadPoolExecutor slots, and blocks any tool
+        # that backstops with `asyncio.wait_for` (e.g. CONSENSUS_MODEL_TIMEOUT
+        # in tools/consensus.py defaults to 240s). Keep read_timeout strictly
+        # below that backstop so a leaked thread terminates within one timeout
+        # cycle. Override via CUSTOM_READ_TIMEOUT for slow custom endpoints.
         default_connect = 30.0  # 30 seconds for connection (vs OpenAI's 5s)
-        default_read = 600.0  # 10 minutes for reading (same as OpenAI default)
-        default_write = 600.0  # 10 minutes for writing
-        default_pool = 600.0  # 10 minutes for pool
+        default_read = 180.0  # 3 minutes for reading (was 600s — caused thread leaks under MCP timeouts)
+        default_write = 180.0  # 3 minutes for writing
+        default_pool = 180.0  # 3 minutes for pool
 
         # For custom/local URLs, use even longer timeouts
         if self.base_url and self._is_localhost_url():

@@ -365,7 +365,6 @@ class TestConsensusTool:
             patch.object(tool, "_get_stance_enhanced_prompt") as mock_get_prompt,
             patch.object(tool, "get_name", return_value="consensus"),
         ):
-
             # Setup mocks
             mock_provider = Mock()
             mock_provider.generate_content = AsyncMock(return_value={"response": "test response"})
@@ -403,6 +402,66 @@ class TestConsensusTool:
                 else:
                     # Re-raise if it's a different RuntimeError
                     raise
+
+    @pytest.mark.asyncio
+    async def test_execute_workflow_consult_model_timeout(self, monkeypatch):
+        """If a per-step model consultation outlives CONSENSUS_MODEL_TIMEOUT,
+        execute_workflow must record an error model_response and return cleanly
+        instead of hanging past the MCP client deadline."""
+        import asyncio as _asyncio
+        import json
+        from unittest.mock import patch
+
+        # Tight timeout so the test stays fast.
+        monkeypatch.setenv("CONSENSUS_MODEL_TIMEOUT", "0.05")
+
+        tool = ConsensusTool()
+
+        async def _hanging_consult(*_args, **_kwargs):
+            # Sleep well past the configured timeout so wait_for trips first.
+            await _asyncio.sleep(2.0)
+            return {"model": "flash", "stance": "neutral", "status": "success", "verdict": "never"}
+
+        with patch.object(tool, "_consult_model", side_effect=_hanging_consult):
+            result = await tool.execute_workflow(
+                {
+                    "step": "Should we adopt the proposal?",
+                    "step_number": 1,
+                    "total_steps": 1,
+                    "next_step_required": False,
+                    "findings": "initial analysis",
+                    "models": [{"model": "flash", "stance": "neutral"}],
+                }
+            )
+
+        assert isinstance(result, list) and result, "execute_workflow must return a non-empty TextContent list"
+        payload = json.loads(result[0].text)
+        model_response = payload.get("model_response") or {}
+        assert model_response.get("status") == "error", payload
+        assert "deadline" in model_response.get("error", "").lower()
+        # Workflow must accumulate the error response so synthesis can continue.
+        assert len(tool.accumulated_responses) == 1
+        assert tool.accumulated_responses[0]["status"] == "error"
+
+    def test_consensus_model_timeout_env_parse(self, monkeypatch):
+        """Helper resolves CONSENSUS_MODEL_TIMEOUT, falling back on bad input
+        and treating non-positive values as 'disabled'."""
+        from tools.consensus import _DEFAULT_CONSENSUS_MODEL_TIMEOUT, _get_consensus_model_timeout
+
+        monkeypatch.delenv("CONSENSUS_MODEL_TIMEOUT", raising=False)
+        assert _get_consensus_model_timeout() == _DEFAULT_CONSENSUS_MODEL_TIMEOUT
+
+        monkeypatch.setenv("CONSENSUS_MODEL_TIMEOUT", "12.5")
+        assert _get_consensus_model_timeout() == 12.5
+
+        monkeypatch.setenv("CONSENSUS_MODEL_TIMEOUT", "0")
+        assert _get_consensus_model_timeout() == 0.0
+
+        monkeypatch.setenv("CONSENSUS_MODEL_TIMEOUT", "-1")
+        assert _get_consensus_model_timeout() == 0.0
+
+        monkeypatch.setenv("CONSENSUS_MODEL_TIMEOUT", "not-a-number")
+        assert _get_consensus_model_timeout() == _DEFAULT_CONSENSUS_MODEL_TIMEOUT
 
 
 if __name__ == "__main__":

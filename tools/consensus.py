@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 from typing import TYPE_CHECKING, Any
 
 from pydantic import Field, model_validator
@@ -35,6 +36,31 @@ from utils.conversation_memory import MAX_CONVERSATION_TURNS, create_thread, get
 from .workflow.base import WorkflowTool
 
 logger = logging.getLogger(__name__)
+
+# Per-model consultation deadline. Provider chains use httpx read_timeout up to
+# 600s with 4 retries, which can outlive the MCP client (~300s default), leaving
+# the server-side asyncio task running and TOOL_COMPLETED never logged. The
+# default 240s leaves headroom under the 300s client deadline; set to 0 (or any
+# non-positive value) via the env var to disable enforcement.
+_DEFAULT_CONSENSUS_MODEL_TIMEOUT = 240.0
+
+
+def _get_consensus_model_timeout() -> float:
+    """Resolve CONSENSUS_MODEL_TIMEOUT (seconds) from environment."""
+    raw = os.environ.get("CONSENSUS_MODEL_TIMEOUT")
+    if raw is None:
+        return _DEFAULT_CONSENSUS_MODEL_TIMEOUT
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid CONSENSUS_MODEL_TIMEOUT=%r — falling back to %.1fs",
+            raw,
+            _DEFAULT_CONSENSUS_MODEL_TIMEOUT,
+        )
+        return _DEFAULT_CONSENSUS_MODEL_TIMEOUT
+    return value if value > 0 else 0.0
+
 
 # Tool-specific field descriptions for consensus workflow
 CONSENSUS_WORKFLOW_FIELD_DESCRIPTIONS = {
@@ -474,8 +500,35 @@ of the evidence, even when it strongly points in one direction.""",
                 self.work_history.append(step_data)
                 self._update_consolidated_findings(step_data)
 
-                # Consult the model for this step
-                model_response = await self._consult_model(self.models_to_consult[model_idx], request)
+                # Consult the model for this step. Bound the call with a hard
+                # deadline so a slow provider can't outlive the MCP client and
+                # leave the server task running indefinitely (TOOL_COMPLETED
+                # never fires in that case).
+                timeout_s = _get_consensus_model_timeout()
+                model_config = self.models_to_consult[model_idx]
+                try:
+                    if timeout_s > 0:
+                        model_response = await asyncio.wait_for(
+                            self._consult_model(model_config, request),
+                            timeout=timeout_s,
+                        )
+                    else:
+                        model_response = await self._consult_model(model_config, request)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "Consensus model %s exceeded %.1fs CONSENSUS_MODEL_TIMEOUT — returning error response",
+                        model_config.get("model"),
+                        timeout_s,
+                    )
+                    model_response = {
+                        "model": model_config.get("model", "unknown"),
+                        "stance": model_config.get("stance", "neutral"),
+                        "status": "error",
+                        "error": (
+                            f"Model consultation exceeded {timeout_s:.1f}s deadline "
+                            "(set CONSENSUS_MODEL_TIMEOUT to override; 0 disables)"
+                        ),
+                    }
 
                 # Add to accumulated responses
                 self.accumulated_responses.append(model_response)

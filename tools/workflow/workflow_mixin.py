@@ -39,6 +39,33 @@ from ..shared.exceptions import ToolExecutionError
 logger = logging.getLogger(__name__)
 
 
+# Per-call deadline for expert analysis. With provider read_timeout=180s and
+# retry_delays [1,3,5,8], a single _attempt cycle bounds at ~720s — over the
+# MCP transport client deadline (~300s default; some clients allow more).
+# Without this ceiling a stuck provider call leaks an asyncio.to_thread worker
+# until httpx finally gives up. 600s leaves room for legitimate deep-reasoning
+# models (gpt-5.2-pro can take 5+ min) while still preventing unbounded hangs.
+# Override with EXPERT_ANALYSIS_TIMEOUT (seconds); set 0/negative to disable.
+_DEFAULT_EXPERT_ANALYSIS_TIMEOUT = 600.0
+
+
+def _get_expert_analysis_timeout() -> float:
+    """Resolve EXPERT_ANALYSIS_TIMEOUT (seconds) from environment."""
+    raw = os.environ.get("EXPERT_ANALYSIS_TIMEOUT")
+    if raw is None:
+        return _DEFAULT_EXPERT_ANALYSIS_TIMEOUT
+    try:
+        value = float(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid EXPERT_ANALYSIS_TIMEOUT=%r — falling back to %.1fs",
+            raw,
+            _DEFAULT_EXPERT_ANALYSIS_TIMEOUT,
+        )
+        return _DEFAULT_EXPERT_ANALYSIS_TIMEOUT
+    return value if value > 0 else 0.0
+
+
 class BaseWorkflowMixin(ABC):
     """
     Abstract base class providing guided workflow functionality for tools.
@@ -1545,16 +1572,40 @@ class BaseWorkflowMixin(ABC):
                 logger.warning(warning)
 
             # Generate AI response - use request parameters if available
-            # Run synchronous provider call in a thread to avoid blocking the asyncio event loop
-            model_response = await asyncio.to_thread(
-                provider.generate_content,
-                prompt=prompt,
-                model_name=model_name,
-                system_prompt=system_prompt,
-                temperature=validated_temperature,
-                thinking_mode=self.get_request_thinking_mode(request),
-                images=list(set(self.consolidated_findings.images)) if self.consolidated_findings.images else None,
-            )
+            # Run synchronous provider call in a thread to avoid blocking the asyncio event loop.
+            # Bound the call with a hard deadline so a stuck provider can't outlive the MCP
+            # client and leave the workflow task running indefinitely (TOOL_COMPLETED would
+            # never fire). The leaked thread, if any, terminates within provider read_timeout
+            # because openai_compatible.py:148 caps it at 180s.
+            expert_timeout_s = _get_expert_analysis_timeout()
+            try:
+                provider_call = asyncio.to_thread(
+                    provider.generate_content,
+                    prompt=prompt,
+                    model_name=model_name,
+                    system_prompt=system_prompt,
+                    temperature=validated_temperature,
+                    thinking_mode=self.get_request_thinking_mode(request),
+                    images=list(set(self.consolidated_findings.images)) if self.consolidated_findings.images else None,
+                )
+                if expert_timeout_s > 0:
+                    model_response = await asyncio.wait_for(provider_call, timeout=expert_timeout_s)
+                else:
+                    model_response = await provider_call
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "[%s] Expert analysis exceeded %.1fs EXPERT_ANALYSIS_TIMEOUT — returning timeout error",
+                    self.get_name(),
+                    expert_timeout_s,
+                )
+                return {
+                    "status": "analysis_timeout",
+                    "error": (
+                        f"Expert analysis exceeded {expert_timeout_s:.1f}s deadline "
+                        "(set EXPERT_ANALYSIS_TIMEOUT to override; 0 disables)"
+                    ),
+                    "model_used": model_name,
+                }
 
             if model_response.content:
                 content = model_response.content.strip()

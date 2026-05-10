@@ -28,6 +28,18 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any, Optional
 
+# Prevent the classic "__main__ vs <module-name> double-load" trap. When PAL is
+# launched as `python server.py`, this file is registered in sys.modules under
+# the key "__main__". Production code paths in tools/version.py, tools/simple/
+# base.py and utils/conversation_memory.py later do `import server` lazily;
+# without this alias Python would not find "server" in sys.modules and would
+# execute server.py top-level a second time under that name, doubling every
+# module-level side effect (provider configuration, atexit handlers, log
+# handlers attached to the "mcp_activity" logger). Aliasing __main__ → server
+# turns the second import into a cache hit. Idempotent, no-op when launched
+# via the console script (where __name__ already is "server").
+sys.modules.setdefault("server", sys.modules[__name__])
+
 from mcp.server import Server  # noqa: E402
 from mcp.server.models import InitializationOptions  # noqa: E402
 from mcp.server.stdio import stdio_server  # noqa: E402
