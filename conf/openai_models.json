@@ -310,6 +310,7 @@
       "supports_images": true,
       "supports_temperature": true,
       "max_image_size_mb": 20.0,
+      "use_openai_response_api": true,
       "allow_code_generation": true,
       "temperature_constraint": "fixed"
     }
