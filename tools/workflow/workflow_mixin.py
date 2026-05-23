@@ -1165,6 +1165,67 @@ class BaseWorkflowMixin(ABC):
             model_metadata=workflow_state,  # Persist the state
         )
 
+    # HGB.3 T3.2 (Bug B caller-side parser fix, 2026-05-22)
+    #
+    # Severity tokens recognised by ``_parse_raw_analysis_findings``. The
+    # outer key is the emoji-prefixed Markdown form PAL's models typically
+    # emit (per the system prompt). The plain bracketed form
+    # (``[CRITICAL]`` etc.) is a defensive fallback — some models drop the
+    # emoji under low-temperature decoding (per risk R-B2 in PLAN-hollow-
+    # gate-blockers.md). Search is case-insensitive.
+    _RAW_ANALYSIS_SEVERITY_TOKENS = (
+        ("[\U0001f534 CRITICAL]", "critical"),  # red circle
+        ("[\U0001f7e0 HIGH]", "high"),  # orange circle
+        ("[\U0001f7e1 MEDIUM]", "medium"),  # yellow circle
+        ("[\U0001f7e2 LOW]", "low"),  # green circle
+        ("[CRITICAL]", "critical"),  # emoji-less fallback
+        ("[HIGH]", "high"),
+        ("[MEDIUM]", "medium"),
+        ("[LOW]", "low"),
+    )
+
+    @classmethod
+    def _parse_raw_analysis_findings(cls, raw_text: str) -> list[dict]:
+        """HGB.3 T3.2 — extract severity-tagged bullets from PAL raw_analysis.
+
+        Tokenises emoji-prefixed and plain-bracketed severity markers (per
+        ``_RAW_ANALYSIS_SEVERITY_TOKENS``) and returns one ``{severity,
+        description}`` dict per occurrence. The description is the text
+        between the marker and the next severity marker or end-of-string,
+        stripped of leading/trailing whitespace.
+
+        Returns ``[]`` when no severity markers are present. Case-insensitive
+        match — the raw_analysis text may have mixed case from different
+        decoding paths.
+
+        Plan: PLAN-hollow-gate-blockers.md §HGB.3 T3.2 (cross-product fix).
+        """
+        if not raw_text:
+            return []
+        # Build a list of (position, severity_label, marker_length) by
+        # scanning case-insensitively for each known token. Sort by position
+        # so we can slice description text between markers.
+        upper = raw_text.upper()
+        hits: list[tuple[int, str, int]] = []
+        for marker, severity in cls._RAW_ANALYSIS_SEVERITY_TOKENS:
+            search_from = 0
+            marker_upper = marker.upper()
+            while True:
+                idx = upper.find(marker_upper, search_from)
+                if idx == -1:
+                    break
+                hits.append((idx, severity, len(marker)))
+                search_from = idx + len(marker)
+        if not hits:
+            return []
+        hits.sort(key=lambda h: h[0])
+        findings: list[dict] = []
+        for i, (pos, severity, marker_len) in enumerate(hits):
+            end_pos = hits[i + 1][0] if i + 1 < len(hits) else len(raw_text)
+            description = raw_text[pos + marker_len : end_pos].strip()
+            findings.append({"severity": severity, "description": description})
+        return findings
+
     def _extract_gate_verdict(self) -> dict:
         """
         Extract structured gate verdict from consolidated findings.
@@ -1176,6 +1237,24 @@ class BaseWorkflowMixin(ABC):
         Verdict logic:
         - HALT: any CRITICAL, HIGH, or MEDIUM severity finding
         - PASS: only LOW or no findings
+
+        HGB.3 T3.3 (Bug B caller-side parser fix, opt-in 2026-05-22):
+        When ``consolidated_findings.issues_found`` is empty AND
+        ``self.expert_analysis`` is present AND the env var
+        ``CLAUDE_GATE_PARSE_RAW_ANALYSIS == "1"``, parse the expert's
+        ``raw_analysis`` text for severity-tagged bullets (see
+        ``_parse_raw_analysis_findings``) and merge them into the gate
+        verdict. Without this branch, PAL's expert findings reach the
+        consumer only as opaque prose — the gate reports PASS/0-findings
+        even when the expert identified CRITICALs. Feature flag is OPT-IN
+        for one dev cycle (per architect risk R-A); default flips to ON
+        after the HGB.5 canary observation.
+
+        HGB.3 T3.6 (defensive alarm): if the parser produces zero findings
+        on the expert path but the raw_analysis text contains the substring
+        "critical" or "high" (case-insensitive), emit a logger warning and
+        suffix the gate summary with ``(raw_analysis parse failed)``. A
+        future format drift becomes visible immediately rather than silent.
         """
         issues = self.consolidated_findings.issues_found
 
@@ -1192,9 +1271,43 @@ class BaseWorkflowMixin(ABC):
                 }
             )
 
-        # Also extract from expert_analysis if available
-        # (expert analysis may find issues not in consolidated_findings)
-        # This is handled by the caller inspecting expert_analysis separately
+        # HGB.3 T3.3 — opt-in raw_analysis parser, gated by env flag.
+        # Only fires when issues_found is empty (otherwise consolidated_findings
+        # already has the structured data) AND expert_analysis is present.
+        raw_parse_failed = False
+        if (
+            not issues
+            and getattr(self, "expert_analysis", None)
+            and os.environ.get("CLAUDE_GATE_PARSE_RAW_ANALYSIS") == "1"
+        ):
+            raw_text = ""
+            if isinstance(self.expert_analysis, dict):
+                raw_text = self.expert_analysis.get("raw_analysis", "") or ""
+                if not raw_text:
+                    raw_text = self.expert_analysis.get("expert_analysis", "") or ""
+                if not raw_text:
+                    raw_text = self.expert_analysis.get("analysis", "") or ""
+            elif isinstance(self.expert_analysis, str):
+                raw_text = self.expert_analysis
+            parsed = self._parse_raw_analysis_findings(raw_text) if raw_text else []
+            if parsed:
+                for f in parsed:
+                    sev = f.get("severity", "unknown").lower()
+                    severity_counts[sev] = severity_counts.get(sev, 0) + 1
+                gate_findings.extend(parsed)
+            elif raw_text:
+                # HGB.3 T3.6 — defensive alarm. Parser produced nothing but
+                # the raw text mentions blocking severity → format drift.
+                lowered = raw_text.lower()
+                if "critical" in lowered or "high" in lowered:
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        "HGB.3 T3.6: raw_analysis parser returned 0 findings "
+                        "but text contains 'critical' or 'high' — possible "
+                        "format drift. Sample (200 chars): %r",
+                        raw_text[:200],
+                    )
+                    raw_parse_failed = True
 
         blocking_severities = {"critical", "high", "medium"}
         has_blocking = any(severity_counts.get(sev, 0) > 0 for sev in blocking_severities)
@@ -1205,8 +1318,10 @@ class BaseWorkflowMixin(ABC):
             blockers = sum(severity_counts.get(s, 0) for s in blocking_severities)
             summary = f"HALT: {blockers} blocking finding(s) — {dict(severity_counts)}"
         else:
-            total = len(issues)
+            total = len(gate_findings)
             summary = f"PASS: {total} finding(s), none blocking"
+        if raw_parse_failed:
+            summary += " (raw_analysis parse failed)"
 
         return {
             "gate_verdict": verdict,
