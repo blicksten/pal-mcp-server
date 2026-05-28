@@ -195,9 +195,9 @@ def test_flag_on_defensive_alarm_when_raw_contains_severity_word(monkeypatch, ca
     assert result["gate_findings"] == []
     assert "(raw_analysis parse failed)" in result["gate_summary"]
     # Verify the alarm fired.
-    assert any("HGB.3 T3.6" in rec.getMessage() for rec in caplog.records), (
-        f"defensive alarm log not emitted; records={[r.getMessage() for r in caplog.records]!r}"
-    )
+    assert any(
+        "HGB.3 T3.6" in rec.getMessage() for rec in caplog.records
+    ), f"defensive alarm log not emitted; records={[r.getMessage() for r in caplog.records]!r}"
 
 
 def test_flag_on_no_expert_analysis_is_no_op(monkeypatch) -> None:
