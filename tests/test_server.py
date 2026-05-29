@@ -33,9 +33,9 @@ class TestServerDoubleLoadGuard:
         alias_marker = 'sys.modules.setdefault("server", sys.modules[__name__])'
         first_logging_setup = "logging.getLogger("
         assert alias_marker in source, "double-load alias missing — see TestServerDoubleLoadGuard docstring"
-        assert source.index(alias_marker) < source.index(first_logging_setup), (
-            "double-load alias must appear BEFORE the first logging.getLogger() call"
-        )
+        assert source.index(alias_marker) < source.index(
+            first_logging_setup
+        ), "double-load alias must appear BEFORE the first logging.getLogger() call"
 
     def test_alias_runs_idempotently(self):
         """Behavioral guard: replay the alias line with __main__ swapped in and
