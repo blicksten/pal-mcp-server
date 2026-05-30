@@ -1508,6 +1508,17 @@ class BaseWorkflowMixin(ABC):
                 response_data["content_type"] = "text"
                 del response_data["expert_analysis"]
             else:
+                # KEYSTONE (pal-hollow-gate-fix T1.1): persist the expert analysis on
+                # ``self`` so ``_extract_gate_verdict`` (gate mode) can parse its
+                # ``raw_analysis``. The parser reads ``getattr(self, "expert_analysis",
+                # None)`` which was ALWAYS None in production (only the test fixture set
+                # it) — making the raw_analysis parser dead code and every CV gate 100%
+                # hollow. EXCLUDE ``analysis_timeout`` (F-3): a timed-out expert produced
+                # no real analysis, so its dict must not be treated as a successful result
+                # (it carries no usable ``raw_analysis``).
+                if not (isinstance(expert_analysis, dict) and expert_analysis.get("status") == "analysis_timeout"):
+                    self.expert_analysis = expert_analysis
+
                 # Expert analysis was successfully executed - include expert guidance
                 response_data["next_steps"] = self.get_completion_next_steps_message(expert_analysis_used=True)
 
@@ -1734,6 +1745,13 @@ class BaseWorkflowMixin(ABC):
                 try:
                     # Try to parse as JSON
                     analysis_result = json.loads(content)
+                    # T1.4 (pal-hollow-gate-fix F-5, PAL-validated): when the expert
+                    # returns JSON it usually lacks a ``raw_analysis`` key, so the gate
+                    # parser (which reads ``raw_analysis``) would still see nothing and
+                    # the gate stays hollow for JSON responses even after the keystone.
+                    # Preserve the raw text so the narrative is always reachable.
+                    if isinstance(analysis_result, dict):
+                        analysis_result.setdefault("raw_analysis", model_response.content)
                     return analysis_result
                 except json.JSONDecodeError as e:
                     # Log the parse error with more details but don't fail

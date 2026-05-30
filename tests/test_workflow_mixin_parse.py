@@ -195,9 +195,9 @@ def test_flag_on_defensive_alarm_when_raw_contains_severity_word(monkeypatch, ca
     assert result["gate_findings"] == []
     assert "(raw_analysis parse failed)" in result["gate_summary"]
     # Verify the alarm fired.
-    assert any(
-        "HGB.3 T3.6" in rec.getMessage() for rec in caplog.records
-    ), f"defensive alarm log not emitted; records={[r.getMessage() for r in caplog.records]!r}"
+    assert any("HGB.3 T3.6" in rec.getMessage() for rec in caplog.records), (
+        f"defensive alarm log not emitted; records={[r.getMessage() for r in caplog.records]!r}"
+    )
 
 
 def test_flag_on_no_expert_analysis_is_no_op(monkeypatch) -> None:
@@ -207,3 +207,100 @@ def test_flag_on_no_expert_analysis_is_no_op(monkeypatch) -> None:
     result = _extract(host)
     assert result["gate_verdict"] == "PASS"
     assert result["gate_findings"] == []
+
+
+# ---------------------------------------------------------------------------
+# KEYSTONE tests (pal-hollow-gate-fix T1.2) — handle_work_completion MUST persist
+# expert_analysis onto self so the gate parser above can ever fire in production.
+# These cover the real assignment path that was MISSING (only the test fixture
+# above set self.expert_analysis, so the parser was dead code → 100% hollow gate).
+# ---------------------------------------------------------------------------
+
+import asyncio  # noqa: E402
+
+_handle_completion = BaseWorkflowMixin.handle_work_completion
+
+
+class _CompletionHost:
+    """Minimal host to drive handle_work_completion into its success branch."""
+
+    handle_work_completion = BaseWorkflowMixin.handle_work_completion  # noqa: SLF001
+    _extract_gate_verdict = BaseWorkflowMixin._extract_gate_verdict  # noqa: SLF001
+    _parse_raw_analysis_findings = BaseWorkflowMixin._parse_raw_analysis_findings  # noqa: SLF001
+
+    def __init__(self, expert_result) -> None:
+        self._expert_result = expert_result
+        self.work_history: list = []
+        self.consolidated_findings = MagicMock()
+        self.consolidated_findings.issues_found = []
+        self.consolidated_findings.files_checked = []
+        self.consolidated_findings.relevant_files = []
+        self.consolidated_findings.relevant_context = []
+        # expert_analysis intentionally NOT set — getattr(...,None) must hold
+        # until the success path assigns it.
+
+    def get_name(self) -> str:
+        return "thinkdeep"
+
+    def get_initial_request(self, step) -> str:
+        return "initial request"
+
+    def _prepare_work_summary(self) -> str:
+        return "work summary"
+
+    def should_skip_expert_analysis(self, request, consolidated_findings) -> bool:
+        return False
+
+    def requires_expert_analysis(self) -> bool:
+        return True
+
+    def should_call_expert_analysis(self, consolidated_findings, request) -> bool:
+        return True
+
+    async def _call_expert_analysis(self, arguments, request):
+        return self._expert_result
+
+    def get_completion_next_steps_message(self, expert_analysis_used: bool = False) -> str:
+        return "next steps"
+
+    def get_expert_analysis_guidance(self) -> str:
+        return ""
+
+
+def test_keystone_success_sets_self_expert_analysis() -> None:
+    """The success branch MUST persist expert_analysis onto self (the keystone)."""
+    expert = {"status": "analysis_complete", "raw_analysis": "[\U0001f534 CRITICAL] boom"}
+    host = _CompletionHost(expert)
+    assert getattr(host, "expert_analysis", None) is None  # pre-condition: unset
+    asyncio.run(host.handle_work_completion({}, MagicMock(), {}))
+    assert host.expert_analysis == expert, "keystone regression: self.expert_analysis not set on success"
+
+
+def test_keystone_analysis_timeout_does_not_set_self_expert_analysis() -> None:
+    """F-3: a timed-out expert produced no real analysis — must NOT be persisted."""
+    expert = {"status": "analysis_timeout", "error": "expert timed out", "model_used": "gpt-5.2-pro"}
+    host = _CompletionHost(expert)
+    asyncio.run(host.handle_work_completion({}, MagicMock(), {}))
+    assert getattr(host, "expert_analysis", None) is None, "analysis_timeout must not set self.expert_analysis"
+
+
+def test_keystone_end_to_end_completion_then_gate_yields_findings(monkeypatch) -> None:
+    """End-to-end: success completion sets self.expert_analysis, then the gate
+    parser surfaces the CRITICAL findings → HALT. This is the whole point — it
+    proves the keystone connects the expert output to the gate verdict."""
+    monkeypatch.setenv("CLAUDE_GATE_PARSE_RAW_ANALYSIS", "1")
+    expert = {
+        "status": "analysis_complete",
+        "raw_analysis": (
+            "[\U0001f534 CRITICAL] SQL injection in login.go:38\n[\U0001f7e0 HIGH] Ignored error in login.go:41"
+        ),
+    }
+    host = _CompletionHost(expert)
+    asyncio.run(host.handle_work_completion({}, MagicMock(), {}))
+    # Now the gate parser must see the narrative the keystone persisted.
+    result = host._extract_gate_verdict()  # noqa: SLF001
+    assert result["gate_verdict"] == "HALT"
+    assert len(result["gate_findings"]) == 2
+    severities = [f["severity"] for f in result["gate_findings"]]
+    assert severities.count("critical") == 1
+    assert severities.count("high") == 1
