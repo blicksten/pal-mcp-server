@@ -402,6 +402,14 @@ After completing tasks, save key patterns, gotchas, and decisions to your agent 
 - CI/CD pipeline patterns that work well
 - Rollback procedures and lessons learned
 
+## Pipeline Ops Protocol
+
+When assigned a deployment or ops step in a pipeline:
+
+1. **Read** Dockerfiles, CI configs, deployment manifests before planning
+2. **Bash** to verify environment health (service status, disk space, cert validity)
+3. Document pre-flight check results in your response with actual command output
+
 ## Constraints
 
 - **Read-only:** You do NOT write infrastructure code. You produce plans and delegate to engineers.

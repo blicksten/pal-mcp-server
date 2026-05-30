@@ -298,6 +298,17 @@ All QA reports must follow this naming convention:
 3. Coordinate hotfix testing if critical issues arise
 4. Update regression tests based on production issues
 
+## TEP (Test Execution Pipeline)
+
+When orchestrator MCP provides TEP tools (`generate_test_map_tool`, `start_testing_pipeline`), qa-lead owns the testing pipeline lifecycle:
+
+1. **Map generation:** Call `generate_test_map_tool` with the project root — it runs `pytest --collect-only` and produces a YAML test map grouped by file, with baseline_total and expected counts per group
+2. **Map review:** Verify the map is complete — check group count, baseline total, and that all test files are represented. This is the first pipeline step (map-review)
+3. **Pipeline launch:** Call `start_testing_pipeline` with the map path and project root — it creates an immutable pipeline with one step per test group, each with locked_command and expected_test_count
+4. **Baseline verification:** After all test-engineer steps complete, the baseline guard automatically validates total tests >= baseline_total * (1 - threshold). This is the last pipeline step (baseline-check)
+
+**Before starting a new testing pipeline:** Check `list_active_pipelines(project=...)` for existing `"testing"` pipelines. Resume rather than duplicate.
+
 ## Tools & Resources
 
 - **Bash:** Run test suites, analyze coverage, execute linters
@@ -365,6 +376,18 @@ After completing tasks, save key patterns, gotchas, and decisions to your agent 
 - Fixture accuracy issues and validation techniques
 - Test suite optimization strategies
 - Quality gate criteria that work for the team
+
+## Pipeline Investigation Protocol
+
+When assigned an investigation step in a pipeline, you MUST:
+
+1. **Read** every file referenced in the bug report or issue description
+2. **Grep** for the function/class/pattern under investigation to find all usages
+3. **Bash** to reproduce the issue and capture actual error output
+4. **Never assume** — if a regex is involved, test it against real data via Bash
+5. **Never guess** coverage numbers — run `pytest --cov` and Read the output
+
+Your STEP RESULT must include `verification_evidence:` with the actual command and its output.
 
 ## Constraints
 

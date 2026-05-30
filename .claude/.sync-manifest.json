@@ -1,11 +1,11 @@
 {
     "schema_version":  1,
-    "synced_at":  "2026-03-22T23:53:11Z",
+    "synced_at":  "2026-05-30T22:17:20Z",
     "config_repo":  "C:/Users/stanislav.naumov/claude-workspace/claude-team-control",
     "project_name":  "pal-mcp",
     "files":  {
                   "CLAUDE.md":  {
-                                    "hash":  "sha256:e081f5b973f4749157f9ebbdb014d2526961e1856ec903cd62bfc3844a9a42d0",
+                                    "hash":  "sha256:00ca5f6d0e01be5c945a0cf57bb6f0d1c0c5a962170a9ae47a5d0821ab81da01",
                                     "sources":  [
                                                     "base/CLAUDE.md",
                                                     "overlays/default.md"
@@ -13,26 +13,33 @@
                                     "composed":  true
                                 },
                   "agents/architect.md":  {
-                                              "hash":  "sha256:0917600f48efb169868501d9efe55a926ce8b80bdeb862387abb4b00d713477e",
+                                              "hash":  "sha256:cb4c4bdb6cf0a5f23fd0f44d40166855876a04f000db68ebb0a1d3667717bb68",
                                               "sources":  [
                                                               "agents/architect.md"
                                                           ],
                                               "composed":  false
                                           },
                   "agents/backend-dev.md":  {
-                                                "hash":  "sha256:d2fa0e6c84fd5bebcc55173b34f2317eeb15983593dd068ff0ba79fbc9fdc9d7",
+                                                "hash":  "sha256:b73685c96bf504ded5b5419df2f17c92e5e1ab140f7cb2405158585c64539da4",
                                                 "sources":  [
                                                                 "agents/backend-dev.md"
                                                             ],
                                                 "composed":  false
                                             },
                   "agents/code-reviewer.md":  {
-                                                  "hash":  "sha256:edb876ed19e72de361e2ce37d570993a24b979bb8160d0d62606a87b07a52a8c",
+                                                  "hash":  "sha256:7cd4e70e3632fd15ba2a1c5d60001dd4d798da4b924b35f7776d13de02968497",
                                                   "sources":  [
                                                                   "agents/code-reviewer.md"
                                                               ],
                                                   "composed":  false
                                               },
+                  "agents/data-analyst.md":  {
+                                                 "hash":  "sha256:3ee1b1a112f5613dee3d7304e7071219dd1e9fb0ec535031fd300bce57c86088",
+                                                 "sources":  [
+                                                                 "agents/data-analyst.md"
+                                                             ],
+                                                 "composed":  false
+                                             },
                   "agents/dev-lead.md":  {
                                              "hash":  "sha256:3c263520617824eaedebafd9205d2d9307327b493552e9865041d5d967a9aab3",
                                              "sources":  [
@@ -48,7 +55,7 @@
                                                     "composed":  false
                                                 },
                   "agents/devops-lead.md":  {
-                                                "hash":  "sha256:4e1e7d635a0e8e32a7a46e6ff46e72f3b8e18304f4bebcbb7a7b63e931622c36",
+                                                "hash":  "sha256:b0659225a725de55a149e606a367d7832d045ec1fa0892f186b78aa7c161f017",
                                                 "sources":  [
                                                                 "agents/devops-lead.md"
                                                             ],
@@ -61,6 +68,13 @@
                                                            ],
                                                "composed":  false
                                            },
+                  "agents/fact-checker.md":  {
+                                                 "hash":  "sha256:f5b3ee9df87060af3ceb2be812a498201da13b05aaa38f3c42744173716c8da4",
+                                                 "sources":  [
+                                                                 "agents/fact-checker.md"
+                                                             ],
+                                                 "composed":  false
+                                             },
                   "agents/frontend-dev.md":  {
                                                  "hash":  "sha256:696b534a6d66587dd08827fb2f0224b4d6c9f0f54e1b5558ba3ef38d1e1b01f7",
                                                  "sources":  [
@@ -76,7 +90,7 @@
                                                        "composed":  false
                                                    },
                   "agents/lead-auditor.md":  {
-                                                 "hash":  "sha256:0c8f844d3c75288ffbdd515d93549db590b5fad25b14de3d69e9265942bb1c31",
+                                                 "hash":  "sha256:3fbf750112729e841ae63d6e99a875a9c390627d8a0b255fbe579b057a61e9ac",
                                                  "sources":  [
                                                                  "agents/lead-auditor.md"
                                                              ],
@@ -97,12 +111,19 @@
                                                "composed":  false
                                            },
                   "agents/qa-lead.md":  {
-                                            "hash":  "sha256:c238271555c7509af338c281d991747e60b1794a297f5e6d8098ac2b5fdfced9",
+                                            "hash":  "sha256:284d1e9a65e090fc16e867fb165b2aa2c51adc623113837c783bd2a064fc2307",
                                             "sources":  [
                                                             "agents/qa-lead.md"
                                                         ],
                                             "composed":  false
                                         },
+                  "agents/research-analyst.md":  {
+                                                     "hash":  "sha256:eb4b7514946b2307930e95d91276a9fdc3966b4098a9065bdab69e828b853fcc",
+                                                     "sources":  [
+                                                                     "agents/research-analyst.md"
+                                                                 ],
+                                                     "composed":  false
+                                                 },
                   "agents/rules-architect.md":  {
                                                     "hash":  "sha256:bd0280f432d11285352d11e55ccf69e1be860f11204151a9d7c82732a02f110e",
                                                     "sources":  [
@@ -125,14 +146,14 @@
                                                   "composed":  false
                                               },
                   "agents/specialist-auditor.md":  {
-                                                       "hash":  "sha256:e39649d598076e42da20ba2561b3604f1f206a7a8bb72c36cb6c8bbd3e8f89e9",
+                                                       "hash":  "sha256:d6ae03c3e7b7df88914e8b5a3027d46a4b65ed8fa974d7946f96dded57e72b42",
                                                        "sources":  [
                                                                        "agents/specialist-auditor.md"
                                                                    ],
                                                        "composed":  false
                                                    },
                   "agents/test-engineer.md":  {
-                                                  "hash":  "sha256:7fdd09c5a13b004d634aa40a8cef917303772d2fa60358fd538a224668dfba80",
+                                                  "hash":  "sha256:3ddee70c919fbe5caa8804424156d86f1a298a9a83aaf9696181feb5d361fc2b",
                                                   "sources":  [
                                                                   "agents/test-engineer.md"
                                                               ],
@@ -146,109 +167,131 @@
                                               "composed":  false
                                           },
                   "commands/agent-memory-rules.md":  {
-                                                         "hash":  "sha256:7847c583b353ccb8b1dbb946eb3e2a4fa6e2331a18133218d3f827a995df248d",
-                                                         "sources":  [
-                                                                         "skills/agent-memory-rules.md"
-                                                                     ],
+                                                         "hash":  "sha256:f6922b479cfd4114b67ebf3e823db8a20d7a18bb0072e26e9466dd63aca01570",
+                                                         "sources":  "skills/agent-memory-rules.md",
                                                          "composed":  false
                                                      },
                   "commands/audit-plan.md":  {
-                                                 "hash":  "sha256:8ce8e03e2bd4b89c69166a0941877ed334c20ddceeaf895f551f5fd4e54b492c",
-                                                 "sources":  [
-                                                                 "skills/audit-plan.md"
-                                                             ],
+                                                 "hash":  "sha256:77c63c7c273fd71a0b7639d8c4a92df566f48ea7366f03921ff6de2ca9c0e92a",
+                                                 "sources":  "skills/audit-plan.md",
                                                  "composed":  false
                                              },
                   "commands/check.md":  {
-                                            "hash":  "sha256:e917576f571ffd4198f4c39bfaa70e42b096262fff4e9cfd2cc147feab5b6112",
+                                            "hash":  "sha256:c095e2231cbff5d462885da46cb8e75a20937d42017eb818a42713bb71465625",
                                             "sources":  [
-                                                            "skills/check.md"
+                                                            "skills/check.md",
+                                                            "base/fragments/"
                                                         ],
-                                            "composed":  false
+                                            "composed":  true
                                         },
                   "commands/cross-validate.md":  {
                                                      "hash":  "sha256:4aac76e6b82bc87ae3c1b3b01e7bbe56465f02600c0a7d6f1740f418dd28164b",
-                                                     "sources":  [
-                                                                     "skills/cross-validate.md"
-                                                                 ],
+                                                     "sources":  "skills/cross-validate.md",
                                                      "composed":  false
                                                  },
+                  "commands/do.md":  {
+                                         "hash":  "sha256:4cfd662419eaf85c40bbcabbe604dbdfa5f028fd81e76ef5b769c38eef56e2e0",
+                                         "sources":  [
+                                                         "skills/do.md",
+                                                         "base/fragments/"
+                                                     ],
+                                         "composed":  true
+                                     },
                   "commands/docs-rules.md":  {
-                                                 "hash":  "sha256:75db09d847a50e1ffd87d2bf932f996de5920715e055e9cf4e787009bd8e08e6",
-                                                 "sources":  [
-                                                                 "skills/docs-rules.md"
-                                                             ],
+                                                 "hash":  "sha256:5e39498f84a2ded0b902e1cc7d66f740368c675fddb9ce30b1524e883569c16d",
+                                                 "sources":  "skills/docs-rules.md",
                                                  "composed":  false
                                              },
                   "commands/finish.md":  {
-                                             "hash":  "sha256:e7232c3f8c9a66a46c9366f04099e8763268f24d188a569868f44b0629639eb7",
+                                             "hash":  "sha256:6bf370a9ff2b689821fdd8d7654ee79abd6eddf21cb3795282d7127c016e2e91",
                                              "sources":  [
-                                                             "skills/finish.md"
+                                                             "skills/finish.md",
+                                                             "base/fragments/"
                                                          ],
-                                             "composed":  false
+                                             "composed":  true
                                          },
-                  "commands/orchestrate.md":  {
-                                                  "hash":  "sha256:804f40ac16c1841d9ac2935b8ca56aa69080094ebf33ace52fd2370237574ead",
-                                                  "sources":  [
-                                                                  "skills/orchestrate.md"
-                                                              ],
+                  "commands/new-session.md":  {
+                                                  "hash":  "sha256:908e42ff7c24248a4a1c8cf4ae6d51a4f8e337fa53a136ab8f203b4300e8a931",
+                                                  "sources":  "skills/new-session.md",
                                                   "composed":  false
                                               },
+                  "commands/orchestrate.md":  {
+                                                  "hash":  "sha256:58903cea45ecd5e34282f233f323542dc8f6e902a9721171915454d79a57a937",
+                                                  "sources":  [
+                                                                  "skills/orchestrate.md",
+                                                                  "base/fragments/"
+                                                              ],
+                                                  "composed":  true
+                                              },
                   "commands/phase.md":  {
-                                            "hash":  "sha256:8435e25947d6a40b744ab0c6e6cb697e25a33db65f86d891a69d03603c5d94aa",
+                                            "hash":  "sha256:131817fcb7af0a7919376ea3d618af924632cfc6378df0b255b986c3c0a33cac",
                                             "sources":  [
-                                                            "skills/phase.md"
+                                                            "skills/phase.md",
+                                                            "base/fragments/"
                                                         ],
-                                            "composed":  false
+                                            "composed":  true
                                         },
                   "commands/plan-feature.md":  {
                                                    "hash":  "sha256:825f4bcca9b5e912174eb78e617e6530d50e7e32e0bea3ad8af1cc3bda19425d",
-                                                   "sources":  [
-                                                                   "skills/plan-feature.md"
-                                                               ],
+                                                   "sources":  "skills/plan-feature.md",
                                                    "composed":  false
                                                },
                   "commands/planning-rules.md":  {
-                                                     "hash":  "sha256:46967f89a4827cb003f1acefdd70530731b95422cb0b80536718707d985b3e36",
-                                                     "sources":  [
-                                                                     "skills/planning-rules.md"
-                                                                 ],
+                                                     "hash":  "sha256:12ed9a587cce935b1f70a37944b98f081cc9bb2b92e31f1920e0a0400b1f5bd5",
+                                                     "sources":  "skills/planning-rules.md",
                                                      "composed":  false
                                                  },
+                  "commands/red-flags.md":  {
+                                                "hash":  "sha256:d2f975f9fe555791e4288859ffc39dcd5ae35b1a89bea0b9aa274883895b48d9",
+                                                "sources":  "skills/red-flags.md",
+                                                "composed":  false
+                                            },
                   "commands/review-pr.md":  {
-                                                "hash":  "sha256:67799b129953b793984ef384c3fcb5e972063fbce1fe9ac838aaf3235d7b132b",
-                                                "sources":  [
-                                                                "skills/review-pr.md"
-                                                            ],
+                                                "hash":  "sha256:9596fa4e4ef283a4eca0f318ab61365b6d1d9ef5599072e51ce3f8b078bc5d29",
+                                                "sources":  "skills/review-pr.md",
                                                 "composed":  false
                                             },
                   "commands/routing-rules.md":  {
-                                                    "hash":  "sha256:88766fcb37bd303a7d0d5dceaa73975c2f4b14bc726b008d8bcb809ebb352823",
-                                                    "sources":  [
-                                                                    "skills/routing-rules.md"
-                                                                ],
+                                                    "hash":  "sha256:f3be335a58747d6a0a28265a5939608880fc415315c22b3fdb1f9a01525d8739",
+                                                    "sources":  "skills/routing-rules.md",
                                                     "composed":  false
                                                 },
                   "commands/run.md":  {
-                                          "hash":  "sha256:32012d2ef05ad536e3595e46974f25851236289c5d772eb5c38175af24231966",
+                                          "hash":  "sha256:44b0de1f8437a83637c2c6302062b72463a49cd8982481c406645dfde34cfb31",
                                           "sources":  [
-                                                          "skills/run.md"
+                                                          "skills/run.md",
+                                                          "base/fragments/"
                                                       ],
-                                          "composed":  false
+                                          "composed":  true
                                       },
                   "commands/save.md":  {
-                                           "hash":  "sha256:a21e41df91ce2a1e47afb819b444821f8974ae1cf00922a59040482324a9e4de",
+                                           "hash":  "sha256:bb8f0f732609f0769993bdefe79441d457f3a373eb8b79c66d5ac484704f6758",
                                            "sources":  [
-                                                           "skills/save.md"
+                                                           "skills/save.md",
+                                                           "base/fragments/"
                                                        ],
-                                           "composed":  false
+                                           "composed":  true
                                        },
+                  "commands/summary.md":  {
+                                              "hash":  "sha256:6675495dda8d1cf2b1cbd79ddfbf63e32e9314c3db66d423618269ffe5e9bfdc",
+                                              "sources":  [
+                                                              "skills/summary.md",
+                                                              "base/fragments/"
+                                                          ],
+                                              "composed":  true
+                                          },
                   "commands/sync.md":  {
                                            "hash":  "sha256:4378f6783c135808b0c437003a08671316440a32df1968131ef34eabb41688c7",
-                                           "sources":  [
-                                                           "skills/sync.md"
-                                                       ],
+                                           "sources":  "skills/sync.md",
                                            "composed":  false
+                                       },
+                  "commands/test.md":  {
+                                           "hash":  "sha256:36404a9b1f929243fc3d9ad6b3c65753b9c542f54b5c160bf4146a5a8489fb20",
+                                           "sources":  [
+                                                           "skills/test.md",
+                                                           "base/fragments/"
+                                                       ],
+                                           "composed":  true
                                        }
               }
 }

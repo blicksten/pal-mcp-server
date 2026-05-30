@@ -33,7 +33,7 @@ For each required domain, invoke the `specialist-auditor` agent with:
   - Logic gaps, race conditions, missing error handling
   - Security holes (injection, XSS, auth bypass)
   - Coupling issues, backward compatibility breaks
-  - Untested paths, wrong assumptions about APIs/libraries
+  - Untested paths, wrong assumptions about APIs/libraries — use mcp__context7__resolve-library-id + mcp__context7__query-docs to verify actual API behavior before flagging as a finding
   - Performance regressions, deployment blind spots
   - Blast radius — which other components are affected
 
@@ -89,14 +89,14 @@ After all specialists complete, perform holistic review:
 ## Iteration Rules
 
 If any auditor returns REJECT:
-1. Fix all CRITICAL, HIGH, and MEDIUM issues in the plan — zero MEDIUM+ required for APPROVE
+1. Fix all findings at or above `CLAUDE_GATE_MIN_BLOCKING_SEVERITY` (default: all severities including LOW) — zero errors required for APPROVE
 2. Re-submit to the SAME auditor for re-review
 3. After specialist fixes, Chief Architect re-reviews the whole plan
-4. Audit is recursive: repeat until all APPROVE (zero MEDIUM+) or ESCALATE
+4. Audit is recursive: repeat until all APPROVE (zero errors) or ESCALATE
 
 ## Key Principles
 
 - **No inventing concerns** — Only flag concrete, verifiable issues based on actual code/docs
 - **Evidence-based** — Every finding must reference specific code, patterns, or documentation
 - **Constructive** — Every REJECT must include a specific fix recommendation
-- **Proportional** — Don't block plans for LOW severity issues; focus on CRITICAL, HIGH, and MEDIUM (zero MEDIUM+ is required for APPROVE)
+- **Severity-aware** — Block plans for all findings at or above `CLAUDE_GATE_MIN_BLOCKING_SEVERITY` (default: `low`, meaning any finding blocks). Teams can loosen via orchestrator setting to accept lower-severity debt at gates.

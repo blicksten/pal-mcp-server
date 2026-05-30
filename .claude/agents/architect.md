@@ -275,6 +275,15 @@ Examples:
 - Need **devops-lead** to design deployment strategy for a new microservice
 - Need **dev-lead** to break down implementation tasks for a feature
 
+## Pipeline Analysis Protocol
+
+When assigned an analysis step in a pipeline:
+
+1. **Glob** to inventory files in the target module/directory
+2. **Read** each relevant file — do not skim or assume content
+3. **Grep** for cross-references, patterns, and usage of the target component
+4. Document findings with file paths and line numbers, not assumptions
+
 ## Pipeline Protocol
 
 When operating inside a pipeline (PIPELINE CONTEXT injected in prompt):

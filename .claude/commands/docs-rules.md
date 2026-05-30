@@ -12,7 +12,7 @@ description: Documentation quality standards, markdown formatting rules, and tes
 ### When writing a document >100 lines, include:
 
 - **Table of Contents** -- anchor-linked TOC at the top.
-- **Mermaid diagrams** -- for architecture, flows, timelines, state machines, decision trees. Use `mermaid` code blocks.
+- **ASCII diagrams** -- for architecture, flows, timelines, state machines, decision trees. Use ` ``` ` code fences with box-drawing characters (+---+, |, →, etc.). Do NOT use Mermaid.
 - **Collapsible sections** -- `<details><summary>...</summary>...</details>` for verbose content.
 - **Unicode emoji markers** -- use actual characters (checkmark, warning, construction), NOT GitHub shortcodes (`:white_check_mark:` etc.) -- shortcodes don't render in VSCode.
 - **Bold blockquote callouts** -- `> **Note:**`, `> **Warning:**`, `> **Important:**` with emoji prefix -- NOT `> [!NOTE]` syntax (doesn't render in VSCode).
@@ -28,7 +28,7 @@ description: Documentation quality standards, markdown formatting rules, and tes
 
 - Never use GitHub-only syntax (`> [!NOTE]`, emoji shortcodes) -- use universal alternatives.
 - All formatting must render in VSCode Markdown Preview, GitLab, and GitHub.
-- Mermaid requires `bierner.markdown-mermaid` VSCode extension.
+- Use ASCII diagrams inside code fences; do not use Mermaid or other rendered diagram syntaxes.
 
 ---
 

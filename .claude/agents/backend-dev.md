@@ -122,6 +122,16 @@ If you need another specialist for better quality:
    - **Context**: [what to pass]
    - **After**: [continue my work / hand to human / chain to next agent]
 
+## Pipeline Implementation Protocol
+
+When assigned an implementation step in a pipeline:
+
+1. **Read** the task file or plan file before writing any code
+2. After implementation, **Bash** to run the test suite and capture results
+3. Include a `## TEST PROOF` block with actual test counts when step has `proof_required`
+4. If the step has `required_tools`, ensure each tool is used and evidenced in output
+5. **Never claim** "tests pass" without running them and quoting the output line
+
 ## Pipeline Protocol
 
 When operating inside a pipeline (PIPELINE CONTEXT injected in prompt):
