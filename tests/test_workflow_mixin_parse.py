@@ -40,10 +40,12 @@ class _StubMixinHost:
     full BaseWorkflowMixin chain (which pulls in PAL provider config etc.).
     """
 
-    # Classmethod descriptor is class-level — copy the binding so an
-    # instance-method-style `self._parse_raw_analysis_findings(...)` call
-    # inside _extract_gate_verdict still resolves to BaseWorkflowMixin's.
+    # Classmethod descriptors are class-level — copy the bindings so
+    # instance-method-style `self._parse_raw_analysis_findings(...)` /
+    # `self._has_unnegated_blocking_signal(...)` calls inside
+    # _extract_gate_verdict still resolve to BaseWorkflowMixin's.
     _parse_raw_analysis_findings = BaseWorkflowMixin._parse_raw_analysis_findings  # noqa: SLF001
+    _has_unnegated_blocking_signal = BaseWorkflowMixin._has_unnegated_blocking_signal  # noqa: SLF001
 
     def __init__(self) -> None:
         self.consolidated_findings = MagicMock()
@@ -95,6 +97,29 @@ def test_parser_extracts_plain_bracket_bullets_format_drift() -> None:
     assert findings[1]["severity"] == "high"
 
 
+def test_parser_extracts_no_bracket_emoji_bullets() -> None:
+    """Fix A (2026-06-15) — no-bracket emoji form `\U0001f534 CRITICAL` (the
+    prompt's SEVERITY DEFINITIONS style) is now recognised."""
+    text = (
+        "\U0001f534 CRITICAL: Hardcoded credential in login.go:18\n"
+        "\U0001f7e0 HIGH: Ignored db.Query error in login.go:41\n"
+        "\U0001f7e2 LOW: minor naming nit"
+    )
+    findings = _parse(text)
+    assert [f["severity"] for f in findings] == ["critical", "high", "low"]
+    assert "Hardcoded credential" in findings[0]["description"]
+
+
+def test_parser_no_double_count_bracketed_vs_no_bracket() -> None:
+    """Dedup regression (2026-06-15) — the bracketed `[\U0001f534 CRITICAL]`
+    bullet must yield ONE finding, not two, even though the no-bracket token
+    `\U0001f534 CRITICAL` is a substring of it."""
+    text = "[\U0001f534 CRITICAL] SQL injection in db.go:5"
+    findings = _parse(text)
+    assert len(findings) == 1
+    assert findings[0]["severity"] == "critical"
+
+
 def test_parser_case_insensitive() -> None:
     """Some decoding paths produce mixed-case markers; parser stays robust."""
     text = "[critical] downcased marker\n[Critical] mixed-case marker"
@@ -109,6 +134,66 @@ def test_parser_ignores_text_without_markers() -> None:
     separately in _extract_gate_verdict)."""
     text = "The code review found a critical issue with the login flow."
     assert _parse(text) == []
+
+
+def test_has_unnegated_blocking_signal_positive() -> None:
+    """Non-negated blocking-severity prose is detected."""
+    h = BaseWorkflowMixin._has_unnegated_blocking_signal
+    assert h("There is a critical SQL injection vulnerability at line 38.")
+    assert h("This is a high-severity authz bypass.")
+    assert h("I rate this high risk.")
+
+
+def test_has_unnegated_blocking_signal_negated_is_false() -> None:
+    """Negated mentions and benign 'high X' phrasings do NOT trip it."""
+    h = BaseWorkflowMixin._has_unnegated_blocking_signal
+    assert not h("No critical issues found.")
+    assert not h("The review found no critical or high-severity problems.")
+    assert not h("The code is high quality and high-level.")
+    assert not h("This module is free of critical defects.")
+    assert not h("")
+
+
+def test_has_unnegated_blocking_signal_no_far_negation_still_fires() -> None:
+    """Re-hollowing guard (sonnet review CRITICAL) — a negation word that is
+    NOT immediately adjacent to the severity word must NOT suppress a real
+    finding. The earlier 24-char window wrongly swallowed these."""
+    h = BaseWorkflowMixin._has_unnegated_blocking_signal
+    assert h("There is no doubt this is a critical SQL injection.")
+    assert h("lack of sanitization makes this a critical vulnerability")
+    assert h("without exception, this is a critical authz bypass")
+    assert h("absent proper escaping, this critical path is exploitable")
+
+
+def test_has_unnegated_blocking_signal_adverb_form_does_not_trip() -> None:
+    """False-positive guard (sonnet review HIGH) — the adverb 'critically'
+    and noun 'criticality' are not whole-word 'critical' and must NOT force a
+    clean review into DISPUTE."""
+    h = BaseWorkflowMixin._has_unnegated_blocking_signal
+    assert not h("It is critically important to add documentation.")
+    assert not h("The criticality of this module is low.")
+    assert not h("This code is uncritical to the hot path.")
+
+
+def test_has_unnegated_blocking_signal_skip_bridge_does_not_re_hollow() -> None:
+    """Re-hollowing guard (sonnet review round 2 CRITICAL) — a leading
+    negation that scopes a DIFFERENT clause must NOT bridge across a noun to
+    suppress a real finding. The walk stops at any non-severity noun, so
+    'no findings or errors, critical SQL injection' is correctly detected."""
+    h = BaseWorkflowMixin._has_unnegated_blocking_signal
+    assert h("no findings or errors, critical SQL injection at line 38")
+    assert h("no defects or vulnerabilities; critical buffer overflow in auth.c")
+    assert h("no bugs. critical race condition in scheduler.py")
+    assert h("no minor issues but a critical authz bypass")
+
+
+def test_has_unnegated_blocking_signal_in_clause_distributed_still_suppressed() -> None:
+    """The legitimate in-clause distributed negation must still be suppressed
+    after the skip-set narrowing — severity vocabulary is still skipped."""
+    h = BaseWorkflowMixin._has_unnegated_blocking_signal
+    assert not h("no critical or high-severity issues")
+    assert not h("no high severity or critical problems were found")
+    assert not h("found no critical, high-severity, or high-risk defects")
 
 
 def test_parser_5C_1H_login_go_fixture_shape() -> None:
@@ -185,19 +270,50 @@ def test_flag_on_but_issues_already_populated_skips_parse(monkeypatch) -> None:
     assert result["gate_findings"][0]["description"] == "structured finding"
 
 
-def test_flag_on_defensive_alarm_when_raw_contains_severity_word(monkeypatch, caplog) -> None:
-    """T3.6 defensive alarm — parser produces 0 but text mentions severity."""
+def test_flag_on_defensive_alarm_escalates_to_dispute(monkeypatch, caplog) -> None:
+    """T3.6 defensive alarm (hardened 2026-06-15) — parser produces 0 but the
+    text carries a non-negated blocking signal → verdict escalates to DISPUTE,
+    NOT PASS. Previously this path returned PASS, silently absorbing a real
+    finding the parser could not structure (the hollow-PASS defect)."""
     monkeypatch.setenv("CLAUDE_GATE_PARSE_RAW_ANALYSIS", "1")
     host = _make_host_with_expert("Plain prose mentioning a critical issue without any bracket markers.")
     with caplog.at_level(logging.WARNING):
         result = _extract(host)
-    assert result["gate_verdict"] == "PASS"
+    assert result["gate_verdict"] == "DISPUTE"
     assert result["gate_findings"] == []
-    assert "(raw_analysis parse failed)" in result["gate_summary"]
+    assert "raw_analysis parse failed" in result["gate_summary"]
     # Verify the alarm fired.
     assert any("HGB.3 T3.6" in rec.getMessage() for rec in caplog.records), (
         f"defensive alarm log not emitted; records={[r.getMessage() for r in caplog.records]!r}"
     )
+
+
+def test_flag_on_negated_severity_stays_pass(monkeypatch) -> None:
+    """Negation-aware T3.6 — 'no critical issues' / 'high quality' must NOT
+    trip the alarm. A genuinely clean review that happens to mention severity
+    words stays PASS (R-5 false-positive guard)."""
+    monkeypatch.setenv("CLAUDE_GATE_PARSE_RAW_ANALYSIS", "1")
+    host = _make_host_with_expert(
+        "The review found no critical or high-severity issues. The code is high quality and the architecture is sound."
+    )
+    result = _extract(host)
+    assert result["gate_verdict"] == "PASS"
+    assert result["gate_findings"] == []
+    assert "raw_analysis parse failed" not in result["gate_summary"]
+
+
+def test_flag_on_no_bracket_emoji_form_parses_to_halt(monkeypatch) -> None:
+    """Fix A (2026-06-15) — the codereview prompt's SEVERITY DEFINITIONS emit
+    the no-bracket emoji form (`\U0001f534 CRITICAL:`). The parser must now
+    extract it so a real finding yields HALT, not a hollow PASS."""
+    monkeypatch.setenv("CLAUDE_GATE_PARSE_RAW_ANALYSIS", "1")
+    host = _make_host_with_expert(
+        "\U0001f534 CRITICAL: SQL injection in db.go:5\n\U0001f7e0 HIGH: unchecked error in db.go:12"
+    )
+    result = _extract(host)
+    assert result["gate_verdict"] == "HALT"
+    severities = sorted(f["severity"] for f in result["gate_findings"])
+    assert severities == ["critical", "high"]
 
 
 def test_flag_on_no_expert_analysis_is_no_op(monkeypatch) -> None:

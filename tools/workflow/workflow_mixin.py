@@ -1174,10 +1174,20 @@ class BaseWorkflowMixin(ABC):
     # emoji under low-temperature decoding (per risk R-B2 in PLAN-hollow-
     # gate-blockers.md). Search is case-insensitive.
     _RAW_ANALYSIS_SEVERITY_TOKENS = (
-        ("[\U0001f534 CRITICAL]", "critical"),  # red circle
-        ("[\U0001f7e0 HIGH]", "high"),  # orange circle
-        ("[\U0001f7e1 MEDIUM]", "medium"),  # yellow circle
-        ("[\U0001f7e2 LOW]", "low"),  # green circle
+        ("[\U0001f534 CRITICAL]", "critical"),  # red circle, bracketed
+        ("[\U0001f7e0 HIGH]", "high"),  # orange circle, bracketed
+        ("[\U0001f7e1 MEDIUM]", "medium"),  # yellow circle, bracketed
+        ("[\U0001f7e2 LOW]", "low"),  # green circle, bracketed
+        # HGL T1.3/F-4 (2026-06-15): no-bracket emoji form. The codereview
+        # system prompt's SEVERITY DEFINITIONS present severities as
+        # ``\U0001f534 CRITICAL:`` (emoji + word, NO brackets), so an expert
+        # following the definition style emits this form. Without these
+        # tokens the parser returned [] on real findings, the T3.6 alarm
+        # fired, and the gate hollow-PASSed (verified live 2026-06-15).
+        ("\U0001f534 CRITICAL", "critical"),
+        ("\U0001f7e0 HIGH", "high"),
+        ("\U0001f7e1 MEDIUM", "medium"),
+        ("\U0001f7e2 LOW", "low"),
         ("[CRITICAL]", "critical"),  # emoji-less fallback
         ("[HIGH]", "high"),
         ("[MEDIUM]", "medium"),
@@ -1218,13 +1228,151 @@ class BaseWorkflowMixin(ABC):
                 search_from = idx + len(marker)
         if not hits:
             return []
-        hits.sort(key=lambda h: h[0])
+        # Dedup overlapping markers (2026-06-15): the no-bracket emoji token
+        # ``\U0001f534 CRITICAL`` is a substring of the bracketed
+        # ``[\U0001f534 CRITICAL]``, so a single bracketed bullet would match
+        # BOTH and be double-counted. Sort by (position asc, longer marker
+        # first) and greedily accept non-overlapping hits — the longer
+        # bracketed marker claims the span, the inner no-bracket hit is
+        # dropped. A bare no-bracket bullet (no surrounding brackets) has no
+        # competing longer hit and is kept.
+        hits.sort(key=lambda h: (h[0], -h[2]))
+        deduped: list[tuple[int, str, int]] = []
+        last_end = -1
+        for pos, severity, marker_len in hits:
+            if pos < last_end:
+                continue
+            deduped.append((pos, severity, marker_len))
+            last_end = pos + marker_len
+        hits = deduped
         findings: list[dict] = []
         for i, (pos, severity, marker_len) in enumerate(hits):
             end_pos = hits[i + 1][0] if i + 1 < len(hits) else len(raw_text)
             description = raw_text[pos + marker_len : end_pos].strip()
             findings.append({"severity": severity, "description": description})
         return findings
+
+    # Negation words that, walking backward from a severity signal across
+    # connectives/severity terms, mark the mention as benign ("no critical",
+    # "no critical or high-severity issues"). String operations only (no
+    # regex per project Regex Discipline).
+    _SINGLE_NEGATIONS = frozenset({"no", "not", "zero", "none", "without", "absent"})
+    # Lead word of a two-word negation phrase, recognised as "<lead> of"
+    # ("free of critical", "lack of critical").
+    _PHRASE_NEGATION_LEADS = frozenset({"free", "lack"})
+    # Words skipped while walking backward from a signal toward a possible
+    # leading negation: ONLY coordinators + severity-vocabulary. This makes
+    # in-clause distributed negation work ("no critical or high-severity
+    # issues" negates BOTH — the noun "issues" sits AFTER the signal, never
+    # in the backward path) WITHOUT crossing into a different clause.
+    #
+    # General nouns (issue/bug/defect/problem/vulnerability/finding/error)
+    # are deliberately NOT skipped (sonnet review round 2, 2026-06-15):
+    # including them let the walk bridge a clause boundary —
+    # "no findings or errors, critical SQL injection" wrongly reached the
+    # leading "no" and re-hollowed a real finding. Stopping at any
+    # non-severity noun is the clause-boundary proxy, biased to the SAFE
+    # direction (a clean review with a noun mid-list yields an extra DISPUTE,
+    # never a hollow PASS).
+    _NEGATION_WALK_SKIP = frozenset(
+        {
+            "or",
+            "and",
+            "nor",
+            "critical",
+            "high",
+            "medium",
+            "low",
+            "severity",
+            "severities",
+            "risk",
+            "risks",
+            "high-severity",
+            "high-risk",
+        }
+    )
+    # Punctuation stripped from adjacent words before the negation check.
+    _WORD_STRIP = ".,;:!?-()[]\"'"
+    # Blocking-severity signals for the T3.6 defensive alarm. "critical" is
+    # specific enough on its own (matched as a whole word — see the
+    # word-boundary guard so "critically"/"criticality" do NOT match); bare
+    # "high" is NOT (high-level, high quality, higher) so it is only counted
+    # in explicit severity phrasings.
+    _BLOCKING_SIGNALS = (
+        "critical",
+        "high severity",
+        "high-severity",
+        "high risk",
+        "high-risk",
+    )
+
+    @classmethod
+    def _negated_before(cls, lowered: str, idx: int) -> bool:
+        """True iff a negation scopes the severity signal at ``idx``.
+
+        Walks backward word-by-word from the signal, skipping coordinators
+        and severity terms (``_NEGATION_WALK_SKIP``) so a LEADING negation
+        over a coordinated list is honoured ("no critical or high-severity
+        issues" negates BOTH). The walk STOPS at the first real content word,
+        so an incidental negation earlier in the clause does NOT suppress a
+        real finding: "there is no doubt this is a critical bug" is NOT
+        negated (the word before "critical" is "a", a content word). This
+        closes the re-hollowing false-negative a fixed character window had.
+        """
+        prefix = lowered[:idx]
+        words = [w.strip(cls._WORD_STRIP) for w in prefix.split()]
+        words = [w for w in words if w]  # drop tokens that were pure punctuation
+        i = len(words) - 1
+        while i >= 0:
+            w = words[i]
+            if w in cls._SINGLE_NEGATIONS or w.endswith("n't"):
+                return True
+            if w == "of" and i >= 1 and words[i - 1] in cls._PHRASE_NEGATION_LEADS:
+                return True
+            if w in cls._NEGATION_WALK_SKIP:
+                i -= 1
+                continue
+            return False
+        return False
+
+    @classmethod
+    def _has_unnegated_blocking_signal(cls, raw_text: str) -> bool:
+        """True iff raw_text mentions a blocking severity in a non-negated
+        context.
+
+        Used by the T3.6 defensive alarm to decide whether an empty parser
+        result on severity-bearing prose should escalate the verdict. Two
+        guards keep it honest:
+          * word-boundary on the signal — the char after "critical" must be
+            non-alpha, so the adverb "critically" / noun "criticality" do
+            NOT trip a clean review into DISPUTE;
+          * word-adjacency negation (``_negated_immediately_before``) — only
+            an immediately-adjacent negation suppresses, so "no critical"
+            stays PASS while "there is no doubt this is a critical bug"
+            correctly escalates.
+        String operations only (no regex).
+        """
+        if not raw_text:
+            return False
+        lowered = raw_text.lower()
+        n = len(lowered)
+        for signal in cls._BLOCKING_SIGNALS:
+            start = 0
+            while True:
+                idx = lowered.find(signal, start)
+                if idx == -1:
+                    break
+                nxt = idx + len(signal)
+                after = lowered[nxt] if nxt < n else ""
+                before = lowered[idx - 1] if idx > 0 else ""
+                # Whole-word match only: reject "critically"/"uncritical".
+                if after.isalpha() or before.isalpha():
+                    start = nxt
+                    continue
+                if not cls._negated_before(lowered, idx):
+                    return True
+                start = nxt
+        return False
 
     def _extract_gate_verdict(self) -> dict:
         """
@@ -1250,11 +1398,16 @@ class BaseWorkflowMixin(ABC):
         for one dev cycle (per architect risk R-A); default flips to ON
         after the HGB.5 canary observation.
 
-        HGB.3 T3.6 (defensive alarm): if the parser produces zero findings
-        on the expert path but the raw_analysis text contains the substring
-        "critical" or "high" (case-insensitive), emit a logger warning and
-        suffix the gate summary with ``(raw_analysis parse failed)``. A
-        future format drift becomes visible immediately rather than silent.
+        HGB.3 T3.6 (defensive alarm, hardened 2026-06-15): if the parser
+        produces zero findings on the expert path but the raw_analysis text
+        carries a NON-NEGATED blocking-severity signal (see
+        ``_has_unnegated_blocking_signal`` — negation-aware so "no critical
+        issues" does not trip it), the verdict escalates to **DISPUTE**, not
+        PASS. Earlier this path only logged a warning and suffixed the
+        summary while still returning PASS, which silently absorbed a real
+        finding the parser could not structure (the hollow-PASS defect
+        verified live 2026-06-15). DISPUTE routes to strict-mode/human
+        escalation instead of asserting a clean gate.
         """
         issues = self.consolidated_findings.issues_found
 
@@ -1295,33 +1448,44 @@ class BaseWorkflowMixin(ABC):
                     sev = f.get("severity", "unknown").lower()
                     severity_counts[sev] = severity_counts.get(sev, 0) + 1
                 gate_findings.extend(parsed)
-            elif raw_text:
+            elif raw_text and self._has_unnegated_blocking_signal(raw_text):
                 # HGB.3 T3.6 — defensive alarm. Parser produced nothing but
-                # the raw text mentions blocking severity → format drift.
-                lowered = raw_text.lower()
-                if "critical" in lowered or "high" in lowered:
-                    logger = logging.getLogger(__name__)
-                    logger.warning(
-                        "HGB.3 T3.6: raw_analysis parser returned 0 findings "
-                        "but text contains 'critical' or 'high' — possible "
-                        "format drift. Sample (200 chars): %r",
-                        raw_text[:200],
-                    )
-                    raw_parse_failed = True
+                # the raw text signals a non-negated blocking severity →
+                # genuine format drift the parser could not structure.
+                logger.warning(
+                    "HGB.3 T3.6: raw_analysis parser returned 0 findings but "
+                    "text carries a non-negated blocking-severity signal — "
+                    "possible format drift. Sample (200 chars): %r",
+                    raw_text[:200],
+                )
+                raw_parse_failed = True
 
         blocking_severities = {"critical", "high", "medium"}
         has_blocking = any(severity_counts.get(sev, 0) > 0 for sev in blocking_severities)
 
-        verdict = "HALT" if has_blocking else "PASS"
-
-        if verdict == "HALT":
+        # Verdict precedence (2026-06-15 hollow-gate fix):
+        #   1. structured blocking findings → HALT
+        #   2. parse failure on blocking-severity prose → DISPUTE (NOT PASS).
+        #      The expert flagged something the parser could not structure;
+        #      asserting a clean PASS would silently absorb a real finding.
+        #      DISPUTE routes to strict-mode/human escalation rather than
+        #      fabricating a synthetic HALT we cannot substantiate.
+        #   3. otherwise → PASS
+        if has_blocking:
+            verdict = "HALT"
             blockers = sum(severity_counts.get(s, 0) for s in blocking_severities)
             summary = f"HALT: {blockers} blocking finding(s) — {dict(severity_counts)}"
+        elif raw_parse_failed:
+            verdict = "DISPUTE"
+            summary = (
+                "DISPUTE: expert analysis reported a blocking severity that the "
+                "parser could not structure (raw_analysis parse failed) — manual "
+                "or strict-mode review required"
+            )
         else:
+            verdict = "PASS"
             total = len(gate_findings)
             summary = f"PASS: {total} finding(s), none blocking"
-        if raw_parse_failed:
-            summary += " (raw_analysis parse failed)"
 
         return {
             "gate_verdict": verdict,
