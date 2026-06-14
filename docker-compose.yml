@@ -1,3 +1,13 @@
+# NOTE — API-key rotation requires a container restart.
+# `ModelProviderRegistry` is a process-lifetime singleton: it caches
+# initialised provider instances (with their API keys / DIAL tokens / Azure
+# credentials) on first use. Rotating a key in this env block (or in any
+# attached `.env` file) does NOT take effect until the daemon process is
+# recycled. After rotating, run:
+#   docker compose restart pal-mcp   (or docker restart pal-mcp-server)
+# There is currently no admin endpoint or SIGHUP handler that calls
+# `ModelProviderRegistry.clear_cache()` — that path is test-only.
+# Future work: SIGHUP / admin endpoint for zero-downtime rotation.
 services:
   pal-mcp:
     build:
@@ -6,19 +16,19 @@ services:
       target: runtime
     image: pal-mcp-server:latest
     container_name: pal-mcp-server
-    
+
     # Container labels for traceability
     labels:
       - "com.pal-mcp.service=pal-mcp-server"
       - "com.pal-mcp.version=1.0.0"
       - "com.pal-mcp.environment=production"
       - "com.pal-mcp.description=AI-powered Model Context Protocol server"
-    
+
     # Environment variables
     environment:
       # Default model configuration
       - DEFAULT_MODEL=${DEFAULT_MODEL:-auto}
-      
+
       # API Keys (use Docker secrets in production)
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
@@ -32,32 +42,32 @@ services:
       - CUSTOM_API_URL=${CUSTOM_API_URL}
       - CUSTOM_API_KEY=${CUSTOM_API_KEY}
       - CUSTOM_MODEL_NAME=${CUSTOM_MODEL_NAME}
-      
+
       # Logging configuration
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - LOG_MAX_SIZE=${LOG_MAX_SIZE:-10MB}
       - LOG_BACKUP_COUNT=${LOG_BACKUP_COUNT:-5}
-      
+
       # Advanced configuration
       - DEFAULT_THINKING_MODE_THINKDEEP=${DEFAULT_THINKING_MODE_THINKDEEP:-high}
       - DISABLED_TOOLS=${DISABLED_TOOLS}
       - MAX_MCP_OUTPUT_TOKENS=${MAX_MCP_OUTPUT_TOKENS}
-      
+
       # Server configuration
       - PYTHONUNBUFFERED=1
       - PYTHONPATH=/app
       - TZ=${TZ:-UTC}
-    
+
     # Volumes for persistent data
     volumes:
       - ./logs:/app/logs
       - pal-mcp-config:/app/conf
       - /etc/localtime:/etc/localtime:ro
-    
+
     # Network configuration
     networks:
       - pal-network
-    
+
     # Resource limits
     deploy:
       resources:
@@ -67,7 +77,7 @@ services:
         reservations:
           memory: 256M
           cpus: '0.25'
-    
+
     # Health check
     healthcheck:
       test: ["CMD", "python", "/usr/local/bin/healthcheck.py"]
@@ -75,10 +85,10 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    
+
     # Restart policy
     restart: unless-stopped
-    
+
     # Security
     security_opt:
       - no-new-privileges:true

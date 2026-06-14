@@ -11,10 +11,10 @@
 
 ### Your CLI + Multiple Models = Your AI Dev Team
 
-**Use the 🤖 CLI you love:**  
+**Use the 🤖 CLI you love:**
 [Claude Code](https://www.anthropic.com/claude-code) · [Gemini CLI](https://github.com/google-gemini/gemini-cli) · [Codex CLI](https://github.com/openai/codex) · [Qwen Code CLI](https://qwenlm.github.io/qwen-code-docs/) · [Cursor](https://cursor.com) · _and more_
 
-**With multiple models within a single prompt:**  
+**With multiple models within a single prompt:**
 Gemini · OpenAI · Anthropic · Grok · Azure · Ollama · OpenRouter · DIAL · On-Device Model
 
 </div>
@@ -125,7 +125,7 @@ and review into consideration to aid with its final pre-commit review.
 <details>
 <summary>For Claude Code Users</summary>
 
-For best results when using [Claude Code](https://claude.ai/code):  
+For best results when using [Claude Code](https://claude.ai/code):
 
 - **Sonnet 4.5** - All agentic work and orchestration
 - **Gemini 3.0 Pro** OR **GPT-5.2 / Pro** - Deep thinking, additional code reviews, debugging and validations, pre-commit analysis
@@ -134,7 +134,7 @@ For best results when using [Claude Code](https://claude.ai/code):
 <details>
 <summary>For Codex Users</summary>
 
-For best results when using [Codex CLI](https://developers.openai.com/codex/cli):  
+For best results when using [Codex CLI](https://developers.openai.com/codex/cli):
 
 - **GPT-5.2 Codex Medium** - All agentic work and orchestration
 - **Gemini 3.0 Pro** OR **GPT-5.2-Pro** - Deep thinking, additional code reviews, debugging and validations, pre-commit analysis
@@ -160,11 +160,23 @@ For best results when using [Codex CLI](https://developers.openai.com/codex/cli)
 git clone https://github.com/BeehiveInnovations/pal-mcp-server.git
 cd pal-mcp-server
 
-# Handles everything: setup, config, API keys from system environment. 
+# Handles everything: setup, config, API keys from system environment.
 # Auto-configures Claude Desktop, Claude Code, Gemini CLI, Codex CLI, Qwen CLI
 # Enable / disable additional settings in .env
-./run-server.sh  
+./run-server.sh
 ```
+
+> **Operations: API-key rotation requires a process restart.**
+> `ModelProviderRegistry` is a singleton that caches initialised provider
+> instances for the lifetime of the daemon. Provider constructors read
+> API keys (and DIAL/Azure tokens) once at instantiation. After rotating
+> a key in the environment (`.env`, shell, container env), restart the
+> PAL daemon to force a fresh provider cache. For Docker /
+> docker-compose: rotate the env var, then `docker compose restart`
+> (or `docker restart <container>`). There is currently no admin
+> endpoint or SIGHUP handler that calls
+> `ModelProviderRegistry.clear_cache()` — that is test-only.
+> Future work: zero-downtime rotation via a SIGHUP / admin endpoint.
 
 **Option B: Instant Setup with [uvx](https://docs.astral.sh/uv/getting-started/installation/)**
 ```json
@@ -274,12 +286,12 @@ DISABLED_TOOLS=
         "DISABLED_TOOLS": "refactor,testgen,secaudit,docgen,tracer",
         "DEFAULT_MODEL": "pro",
         "DEFAULT_THINKING_MODE_THINKDEEP": "high",
-        
+
         // API configuration
         "GEMINI_API_KEY": "your-gemini-key",
         "OPENAI_API_KEY": "your-openai-key",
         "OPENROUTER_API_KEY": "your-openrouter-key",
-        
+
         // Logging and performance
         "LOG_LEVEL": "INFO",
         "CONVERSATION_TIMEOUT_HOURS": "6",

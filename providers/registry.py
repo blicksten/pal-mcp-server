@@ -32,6 +32,30 @@ class ModelProviderRegistry:
     """
 
     _instance = None
+    # NOTE — Singleton + initialised-provider cache (hollow-ship-cleanup M-09):
+    # The first ``ModelProviderRegistry()`` call creates the singleton and
+    # ``register_provider`` populates ``_providers`` lazily. ``get_provider``
+    # then memoises constructed provider instances in
+    # ``_initialized_providers`` for the lifetime of the process — provider
+    # constructors read API keys from environment variables (or DIAL/Azure
+    # tokens, etc.) at instantiation time, NOT on every request.
+    #
+    # **API key rotation requires a process restart.** If you rotate an API
+    # key for an already-initialised provider (or rotate the DIAL_TOKEN /
+    # AZURE_OPENAI_API_KEY equivalents), the cached provider instance keeps
+    # using the OLD key until either:
+    #   1. The orchestrator / daemon process is restarted (recommended),
+    #      OR
+    #   2. ``ModelProviderRegistry.clear_cache()`` is called (test-only —
+    #      there is currently no admin endpoint or SIGHUP handler that wires
+    #      this).
+    #
+    # For containerised deployments (Docker, docker-compose): rotate the env
+    # variable in the container's environment, then ``docker compose restart
+    # <service>`` (or ``docker restart <container>``). The PAL daemon will
+    # reload providers on startup. Future work — add a SIGHUP handler /
+    # admin endpoint that calls ``clear_cache()`` for zero-downtime rotation;
+    # deferred to a future PAL plan per hollow-ship-cleanup REVIEW.
 
     # Provider priority order for model selection
     # Native APIs first, then custom endpoints, then catch-all providers
