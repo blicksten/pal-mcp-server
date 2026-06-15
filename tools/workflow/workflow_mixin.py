@@ -686,6 +686,18 @@ class BaseWorkflowMixin(ABC):
             # Store arguments for access by helper methods
             self._current_arguments = arguments
 
+            # 2026-06-15 (PAL review HIGH+MEDIUM) — clear per-run expert state at
+            # the start of every workflow call so a PRIOR request's
+            # ``expert_analysis`` / token usage cannot leak into this run's gate
+            # verdict (stale raw_analysis → false HALT/DISPUTE) or defeat the
+            # T2.2 ``tokens_used>0 ⇒ real expert call`` sentinel. The
+            # multi-step state of the CURRENT workflow is restored from
+            # continuation memory (work_history below), not these attributes,
+            # so resetting them per call is safe; the expert path re-sets both
+            # during this call's completion before the gate parses them.
+            self.expert_analysis = None
+            self._expert_usage = {}
+
             # Validate request using tool-specific model
             request = self.get_workflow_request_model()(**arguments)
 
