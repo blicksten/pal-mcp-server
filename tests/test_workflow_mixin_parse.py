@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock
 
-from tools.workflow.workflow_mixin import BaseWorkflowMixin
+from tools.workflow.workflow_mixin import BaseWorkflowMixin, _normalize_expert_usage
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -420,3 +420,131 @@ def test_keystone_end_to_end_completion_then_gate_yields_findings(monkeypatch) -
     severities = [f["severity"] for f in result["gate_findings"]]
     assert severities.count("critical") == 1
     assert severities.count("high") == 1
+
+
+# ===========================================================================
+# T2.2 (pal-hollow-gate-fix Phase 2) — expert token usage emission
+# ===========================================================================
+
+
+class _UsageObj:
+    """Stub mimicking provider ``model_response.usage`` attribute object."""
+
+    def __init__(self, input_tokens=None, output_tokens=None, total_tokens=None) -> None:
+        if input_tokens is not None:
+            self.input_tokens = input_tokens
+        if output_tokens is not None:
+            self.output_tokens = output_tokens
+        if total_tokens is not None:
+            self.total_tokens = total_tokens
+
+
+class _RespObj:
+    """Stub mimicking ``model_response`` with optional ``.usage``."""
+
+    def __init__(self, usage=None) -> None:
+        if usage is not None:
+            self.usage = usage
+
+
+# -------- _normalize_expert_usage primitive --------
+
+
+def test_normalize_usage_none_or_missing_returns_empty() -> None:
+    assert _normalize_expert_usage(_RespObj()) == {}  # no .usage attr
+    assert _normalize_expert_usage(_RespObj(usage=None)) == {}
+
+
+def test_normalize_usage_full_object_attrs() -> None:
+    resp = _RespObj(usage=_UsageObj(input_tokens=120, output_tokens=80, total_tokens=200))
+    assert _normalize_expert_usage(resp) == {
+        "input_tokens": 120,
+        "output_tokens": 80,
+        "total_tokens": 200,
+    }
+
+
+def test_normalize_usage_dict_form() -> None:
+    # Some providers emit usage as a plain dict (older anthropic SDK shape).
+    resp = _RespObj(usage={"input_tokens": 50, "output_tokens": 30, "total_tokens": 80})
+    assert _normalize_expert_usage(resp) == {
+        "input_tokens": 50,
+        "output_tokens": 30,
+        "total_tokens": 80,
+    }
+
+
+def test_normalize_usage_backfills_missing_total() -> None:
+    # Providers that omit total_tokens but supply input + output → backfill.
+    resp = _RespObj(usage=_UsageObj(input_tokens=10, output_tokens=15))
+    assert _normalize_expert_usage(resp) == {
+        "input_tokens": 10,
+        "output_tokens": 15,
+        "total_tokens": 25,  # backfilled = 10 + 15
+    }
+
+
+def test_normalize_usage_coerces_strings_and_none_to_zero() -> None:
+    resp = _RespObj(usage=_UsageObj(input_tokens="bad", output_tokens=None, total_tokens=0))
+    out = _normalize_expert_usage(resp)
+    # Non-numeric input + None output both coerce to 0; total stays 0
+    assert out == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+
+# -------- _extract_gate_verdict integration --------
+
+
+def test_extract_verdict_no_expert_usage_attr_emits_zero() -> None:
+    """When _call_expert_analysis was never called (no _expert_usage attr),
+    tokens_used must be 0 (sentinel for downstream hollow-detection)."""
+    host = _StubMixinHost()
+    # Deliberately do NOT set host._expert_usage.
+    result = _extract(host)
+    assert result["tokens_used"] == 0
+
+
+def test_extract_verdict_empty_usage_dict_emits_zero() -> None:
+    """Timeout / empty-response / error branches set _expert_usage={} —
+    tokens_used must reflect zero, not be None or missing."""
+    host = _StubMixinHost()
+    host._expert_usage = {}  # noqa: SLF001
+    result = _extract(host)
+    assert result["tokens_used"] == 0
+
+
+def test_extract_verdict_populated_usage_surfaces_total_tokens() -> None:
+    """Successful expert call left _expert_usage with totals → emitted."""
+    host = _StubMixinHost()
+    host._expert_usage = {  # noqa: SLF001
+        "input_tokens": 4096,
+        "output_tokens": 512,
+        "total_tokens": 4608,
+    }
+    result = _extract(host)
+    assert result["tokens_used"] == 4608
+
+
+def test_extract_verdict_invalid_usage_type_coerces_to_zero() -> None:
+    """Defensive: if _expert_usage was clobbered to a non-dict, fall back to 0."""
+    host = _StubMixinHost()
+    host._expert_usage = "not a dict"  # noqa: SLF001
+    result = _extract(host)
+    assert result["tokens_used"] == 0
+
+
+def test_extract_verdict_keeps_all_existing_keys() -> None:
+    """Adding tokens_used must not displace gate_verdict/findings/summary."""
+    host = _StubMixinHost()
+    host._expert_usage = {"total_tokens": 100}  # noqa: SLF001
+    result = _extract(host)
+    assert set(result.keys()) >= {"gate_verdict", "gate_findings", "gate_summary", "tokens_used"}
+
+
+def test_extract_verdict_total_zero_with_inout_emits_zero() -> None:
+    """If only input/output stored (no total), tokens_used reads total field
+    only. The backfill happens in _normalize_expert_usage at write time."""
+    host = _StubMixinHost()
+    host._expert_usage = {"input_tokens": 10, "output_tokens": 20, "total_tokens": 0}  # noqa: SLF001
+    result = _extract(host)
+    # _extract reads only total_tokens; backfill is upstream responsibility.
+    assert result["tokens_used"] == 0

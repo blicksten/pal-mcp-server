@@ -66,6 +66,47 @@ def _get_expert_analysis_timeout() -> float:
     return value if value > 0 else 0.0
 
 
+def _normalize_expert_usage(model_response) -> dict[str, int]:
+    """T2.2 (pal-hollow-gate-fix Phase 2) — extract token counts from a
+    provider response into a stable {input_tokens, output_tokens,
+    total_tokens} dict.
+
+    Defensive: providers vary on whether ``.usage`` is present, an object,
+    a dict, or None. Missing attributes coerce to 0 so the gate can always
+    emit a numeric ``tokens_used`` (sentinel for hollow detection in
+    consumers).
+
+    Returns ``{}`` when no usable usage data is available — that empty dict
+    is itself the "no token info" signal and causes
+    ``_extract_gate_verdict`` to surface ``tokens_used=0``.
+    """
+    usage = getattr(model_response, "usage", None)
+    if usage is None:
+        return {}
+
+    def _read(name: str) -> int:
+        # Object-attribute first, then dict-key — providers split on this.
+        val = getattr(usage, name, None)
+        if val is None and isinstance(usage, dict):
+            val = usage.get(name)
+        try:
+            return int(val) if val is not None else 0
+        except (TypeError, ValueError):
+            return 0
+
+    inp = _read("input_tokens")
+    out = _read("output_tokens")
+    total = _read("total_tokens")
+    # Many providers omit total but supply input + output; backfill.
+    if total == 0 and (inp or out):
+        total = inp + out
+    return {
+        "input_tokens": inp,
+        "output_tokens": out,
+        "total_tokens": total,
+    }
+
+
 class BaseWorkflowMixin(ABC):
     """
     Abstract base class providing guided workflow functionality for tools.
@@ -1487,10 +1528,22 @@ class BaseWorkflowMixin(ABC):
             total = len(gate_findings)
             summary = f"PASS: {total} finding(s), none blocking"
 
+        # T2.2 (pal-hollow-gate-fix Phase 2) — surface expert token usage so
+        # downstream consumers (orchestrator HGB.5 R-5 three-condition guard,
+        # cost telemetry, dashboard) can distinguish a real expert call
+        # (tokens > 0) from a hollow/skipped path (tokens == 0). Stored on
+        # ``self`` by ``_call_expert_analysis`` before every content-producing
+        # return; defaults to ``{}`` when expert was never called or failed.
+        usage = getattr(self, "_expert_usage", None)
+        if not isinstance(usage, dict):
+            usage = {}
+        tokens_used = int(usage.get("total_tokens", 0) or 0)
+
         return {
             "gate_verdict": verdict,
             "gate_findings": gate_findings,
             "gate_summary": summary,
+            "tokens_used": tokens_used,
         }
 
     def _add_workflow_metadata(self, response_data: dict, arguments: dict[str, Any]) -> None:
@@ -1882,12 +1935,22 @@ class BaseWorkflowMixin(ABC):
                     model_response = await asyncio.wait_for(provider_call, timeout=expert_timeout_s)
                 else:
                     model_response = await provider_call
+                # T2.2 (pal-hollow-gate-fix Phase 2) — persist token usage on
+                # ``self`` so ``_extract_gate_verdict`` (gate mode) can surface
+                # it as ``tokens_used``. Same keystone-trap class as T1.1: the
+                # method is no-arg and cannot see ``model_response`` locals, so
+                # we store the usage on the instance before any content-
+                # producing return path. Empty dict on absent/None usage so
+                # the gate emits ``tokens_used=0`` (sentinel) instead of None.
+                self._expert_usage = _normalize_expert_usage(model_response)
             except asyncio.TimeoutError:
                 logger.warning(
                     "[%s] Expert analysis exceeded %.1fs EXPERT_ANALYSIS_TIMEOUT — returning timeout error",
                     self.get_name(),
                     expert_timeout_s,
                 )
+                # T2.2 — timed-out expert produced no tokens; mark explicit empty.
+                self._expert_usage = {}
                 return {
                     "status": "analysis_timeout",
                     "error": (
@@ -1933,10 +1996,15 @@ class BaseWorkflowMixin(ABC):
                         "note": "Analysis provided in plain text format",
                     }
             else:
+                # T2.2 — empty response has no usable token count.
+                self._expert_usage = {}
                 return {"error": "No response from model", "status": "empty_response"}
 
         except Exception as e:
             logger.error(f"Error calling expert analysis: {e}", exc_info=True)
+            # T2.2 — surface failure as zero-token gate, never let stale
+            # ``self._expert_usage`` from a prior successful call leak through.
+            self._expert_usage = {}
             return {"error": str(e), "status": "analysis_error"}
 
     def _process_work_step(self, step_data: dict):
