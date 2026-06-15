@@ -48,21 +48,53 @@ logger = logging.getLogger(__name__)
 # Override with EXPERT_ANALYSIS_TIMEOUT (seconds); set 0/negative to disable.
 _DEFAULT_EXPERT_ANALYSIS_TIMEOUT = 600.0
 
+# T2.3 (pal-hollow-gate-fix Phase 2) — direct-path default deadline.
+# Used when no explicit ``expert_timeout_s`` argument is supplied and the
+# EXPERT_ANALYSIS_TIMEOUT env var is unset. 270s sits under the typical
+# ~300s MCP transport client deadline so a slow expert returns a
+# structured ``analysis_timeout`` instead of being hard-aborted by the
+# transport. The orchestrator's async-queue caller passes
+# ``expert_timeout_s=570`` per ReviewSpec to opt into the long ceiling
+# (still < _DEFAULT_EXPERT_ANALYSIS_TIMEOUT=600 async clamp).
+_DIRECT_EXPERT_ANALYSIS_TIMEOUT = 270.0
 
-def _get_expert_analysis_timeout() -> float:
-    """Resolve EXPERT_ANALYSIS_TIMEOUT (seconds) from environment."""
+
+def _get_expert_analysis_timeout(explicit: int | None = None) -> float:
+    """Resolve the expert-analysis deadline (seconds).
+
+    Precedence (highest first):
+      1. ``explicit`` argument (T2.3 per-call override via
+         WorkflowRequest.expert_timeout_s, clamped to the 600s async
+         ceiling so a runaway caller cannot exceed the upper bound).
+      2. ``EXPERT_ANALYSIS_TIMEOUT`` env (legacy operator-wide override).
+      3. ``_DIRECT_EXPERT_ANALYSIS_TIMEOUT`` (270s — direct-path default).
+
+    Returns ``0.0`` only when the env var is explicitly set to ``0`` or
+    negative — disables the deadline entirely (caller blocks until the
+    provider returns naturally).
+    """
+    # T2.3 — explicit per-call override takes precedence. Clamp to the
+    # 600s ceiling so a misbehaving caller cannot bypass the upper bound.
+    if explicit is not None:
+        try:
+            value = float(explicit)
+        except (TypeError, ValueError):
+            value = 0.0
+        if value > 0:
+            return min(value, _DEFAULT_EXPERT_ANALYSIS_TIMEOUT)
+
     raw = os.environ.get("EXPERT_ANALYSIS_TIMEOUT")
     if raw is None:
-        return _DEFAULT_EXPERT_ANALYSIS_TIMEOUT
+        return _DIRECT_EXPERT_ANALYSIS_TIMEOUT
     try:
         value = float(raw)
     except ValueError:
         logger.warning(
             "Invalid EXPERT_ANALYSIS_TIMEOUT=%r — falling back to %.1fs",
             raw,
-            _DEFAULT_EXPERT_ANALYSIS_TIMEOUT,
+            _DIRECT_EXPERT_ANALYSIS_TIMEOUT,
         )
-        return _DEFAULT_EXPERT_ANALYSIS_TIMEOUT
+        return _DIRECT_EXPERT_ANALYSIS_TIMEOUT
     return value if value > 0 else 0.0
 
 
@@ -1932,7 +1964,11 @@ class BaseWorkflowMixin(ABC):
             # client and leave the workflow task running indefinitely (TOOL_COMPLETED would
             # never fire). The leaked thread, if any, terminates within provider read_timeout
             # because openai_compatible.py:148 caps it at 180s.
-            expert_timeout_s = _get_expert_analysis_timeout()
+            # T2.3 — per-call override via WorkflowRequest.expert_timeout_s.
+            # ``arguments`` is the raw dict from the MCP request, so a caller
+            # (e.g. orchestrator async-queue worker) can pin a value without
+            # mutating the long-lived PAL subprocess env.
+            expert_timeout_s = _get_expert_analysis_timeout(arguments.get("expert_timeout_s"))
             try:
                 provider_call = asyncio.to_thread(
                     provider.generate_content,

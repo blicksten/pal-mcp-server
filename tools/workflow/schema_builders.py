@@ -77,6 +77,11 @@ class WorkflowSchemaBuilder:
             "default": True,
             "description": WORKFLOW_FIELD_DESCRIPTIONS["use_assistant_model"],
         },
+        "expert_timeout_s": {
+            "type": "integer",
+            "minimum": 1,
+            "description": WORKFLOW_FIELD_DESCRIPTIONS["expert_timeout_s"],
+        },
     }
 
     @staticmethod

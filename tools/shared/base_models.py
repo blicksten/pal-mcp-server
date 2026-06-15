@@ -59,6 +59,14 @@ WORKFLOW_FIELD_DESCRIPTIONS = {
         "False skips expert analysis, relies solely on your personal investigation. "
         "Defaults to True for comprehensive validation."
     ),
+    "expert_timeout_s": (
+        "Per-call override for the expert-analysis deadline (seconds). "
+        "When omitted, falls back to EXPERT_ANALYSIS_TIMEOUT env or the "
+        "270s direct-path default. Clamped to the 600s async ceiling. "
+        "Set by the orchestrator async-queue caller to 570s to opt in "
+        "to the long ceiling; direct (Claude Code) callers should omit "
+        "so the 270s default applies (below the ~300s MCP client deadline)."
+    ),
 }
 
 
@@ -130,6 +138,7 @@ class WorkflowRequest(BaseWorkflowRequest):
     # Optional workflow fields
     hypothesis: Optional[str] = Field(None, description=WORKFLOW_FIELD_DESCRIPTIONS["hypothesis"])
     use_assistant_model: Optional[bool] = Field(True, description=WORKFLOW_FIELD_DESCRIPTIONS["use_assistant_model"])
+    expert_timeout_s: Optional[int] = Field(None, ge=1, description=WORKFLOW_FIELD_DESCRIPTIONS["expert_timeout_s"])
 
     @field_validator("files_checked", "relevant_files", "relevant_context", mode="before")
     @classmethod

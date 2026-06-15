@@ -25,7 +25,13 @@ from __future__ import annotations
 import logging
 from unittest.mock import MagicMock
 
-from tools.workflow.workflow_mixin import BaseWorkflowMixin, _normalize_expert_usage
+from tools.workflow.workflow_mixin import (
+    _DEFAULT_EXPERT_ANALYSIS_TIMEOUT,
+    _DIRECT_EXPERT_ANALYSIS_TIMEOUT,
+    BaseWorkflowMixin,
+    _get_expert_analysis_timeout,
+    _normalize_expert_usage,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -548,3 +554,76 @@ def test_extract_verdict_total_zero_with_inout_emits_zero() -> None:
     result = _extract(host)
     # _extract reads only total_tokens; backfill is upstream responsibility.
     assert result["tokens_used"] == 0
+
+
+# ===========================================================================
+# T2.3 (pal-hollow-gate-fix Phase 2) — explicit expert_timeout_s precedence
+# ===========================================================================
+
+
+def test_t23_no_explicit_no_env_returns_direct_default(monkeypatch) -> None:
+    """Direct-path default (270s) applies when neither explicit nor env set."""
+    monkeypatch.delenv("EXPERT_ANALYSIS_TIMEOUT", raising=False)
+    assert _get_expert_analysis_timeout() == _DIRECT_EXPERT_ANALYSIS_TIMEOUT
+    assert _get_expert_analysis_timeout(None) == _DIRECT_EXPERT_ANALYSIS_TIMEOUT
+
+
+def test_t23_env_only_returns_env_value(monkeypatch) -> None:
+    """EXPERT_ANALYSIS_TIMEOUT env applies when no explicit arg."""
+    monkeypatch.setenv("EXPERT_ANALYSIS_TIMEOUT", "300")
+    assert _get_expert_analysis_timeout() == 300.0
+
+
+def test_t23_explicit_overrides_env(monkeypatch) -> None:
+    """Explicit arg wins over env (per-call override)."""
+    monkeypatch.setenv("EXPERT_ANALYSIS_TIMEOUT", "300")
+    assert _get_expert_analysis_timeout(570) == 570.0
+
+
+def test_t23_explicit_clamped_to_async_ceiling(monkeypatch) -> None:
+    """Explicit value > _DEFAULT_EXPERT_ANALYSIS_TIMEOUT (600s) clamps."""
+    monkeypatch.delenv("EXPERT_ANALYSIS_TIMEOUT", raising=False)
+    assert _get_expert_analysis_timeout(9999) == _DEFAULT_EXPERT_ANALYSIS_TIMEOUT
+    # Equal to ceiling stays equal (not strictly less).
+    assert _get_expert_analysis_timeout(int(_DEFAULT_EXPERT_ANALYSIS_TIMEOUT)) == _DEFAULT_EXPERT_ANALYSIS_TIMEOUT
+
+
+def test_t23_explicit_zero_or_negative_falls_through(monkeypatch) -> None:
+    """Explicit 0/negative is treated as "no override", falls through to env/default."""
+    monkeypatch.delenv("EXPERT_ANALYSIS_TIMEOUT", raising=False)
+    assert _get_expert_analysis_timeout(0) == _DIRECT_EXPERT_ANALYSIS_TIMEOUT
+    assert _get_expert_analysis_timeout(-1) == _DIRECT_EXPERT_ANALYSIS_TIMEOUT
+
+
+def test_t23_explicit_non_numeric_falls_through(monkeypatch) -> None:
+    """Defensive: non-numeric explicit (string, dict) falls through cleanly."""
+    monkeypatch.delenv("EXPERT_ANALYSIS_TIMEOUT", raising=False)
+    assert _get_expert_analysis_timeout("bad") == _DIRECT_EXPERT_ANALYSIS_TIMEOUT  # type: ignore[arg-type]
+
+
+def test_t23_env_disable_with_zero_still_disables(monkeypatch) -> None:
+    """EXPERT_ANALYSIS_TIMEOUT=0 keeps the legacy disable semantic when no explicit."""
+    monkeypatch.setenv("EXPERT_ANALYSIS_TIMEOUT", "0")
+    assert _get_expert_analysis_timeout() == 0.0
+
+
+def test_t23_env_invalid_falls_back_to_direct_default(monkeypatch) -> None:
+    """Invalid env (non-numeric) falls back to direct default, not the legacy
+    600s — T2.3 prefers the safer direct deadline when the operator-wide
+    override is malformed."""
+    monkeypatch.setenv("EXPERT_ANALYSIS_TIMEOUT", "not-a-number")
+    assert _get_expert_analysis_timeout() == _DIRECT_EXPERT_ANALYSIS_TIMEOUT
+
+
+def test_t23_direct_default_below_mcp_deadline() -> None:
+    """The whole point of T2.3 — direct default sits below the 300s MCP
+    client deadline so a slow expert returns a structured analysis_timeout
+    instead of being hard-aborted by the transport."""
+    assert _DIRECT_EXPERT_ANALYSIS_TIMEOUT < 300.0
+
+
+def test_t23_async_ceiling_above_direct_default() -> None:
+    """Async caller's 570s opt-in must fit between direct default (270) and
+    the 600s async ceiling — otherwise the orchestrator's queue worker
+    would be stuck with the direct deadline."""
+    assert _DIRECT_EXPERT_ANALYSIS_TIMEOUT < 570 < _DEFAULT_EXPERT_ANALYSIS_TIMEOUT
